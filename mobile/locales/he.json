@@ -1,0 +1,17 @@
+{
+  "search": "חיפוש",
+  "playlists": "פלייליסטים",
+  "save_song": "שמור שיר",
+  "my_songs": "השירים שלי",
+  "settings": "הגדרות",
+  "language": "שפה",
+  "instrument_guitar": "גיטרה",
+  "instrument_piano": "פסנתר",
+  "no_results": "לא נמצאו תוצאות",
+  "transpose": "טרנספוז",
+  "add_to_playlist": "הוסף לפלייליסט",
+  "share": "שתף",
+  "loading": "טוען...",
+  "error_fetch": "שגיאה בטעינת האקורדים",
+  "auto_scroll": "גלילה אוטומטית"
+}

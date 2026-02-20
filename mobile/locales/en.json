@@ -1,0 +1,17 @@
+{
+  "search": "Search",
+  "playlists": "Playlists",
+  "save_song": "Save Song",
+  "my_songs": "My Songs",
+  "settings": "Settings",
+  "language": "Language",
+  "instrument_guitar": "Guitar",
+  "instrument_piano": "Piano",
+  "no_results": "No results found",
+  "transpose": "Transpose",
+  "add_to_playlist": "Add to Playlist",
+  "share": "Share",
+  "loading": "Loading...",
+  "error_fetch": "Failed to load chords",
+  "auto_scroll": "Auto Scroll"
+}
