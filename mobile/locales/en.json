@@ -13,5 +13,7 @@
   "share": "Share",
   "loading": "Loading...",
   "error_fetch": "Failed to load chords",
-  "auto_scroll": "Auto Scroll"
+  "auto_scroll": "Auto Scroll",
+  "sign_in": "Sign in to MuZalkin",
+  "sign_in_google": "Sign in with Google"
 }

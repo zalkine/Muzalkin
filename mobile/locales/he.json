@@ -13,5 +13,7 @@
   "share": "שתף",
   "loading": "טוען...",
   "error_fetch": "שגיאה בטעינת האקורדים",
-  "auto_scroll": "גלילה אוטומטית"
+  "auto_scroll": "גלילה אוטומטית",
+  "sign_in": "התחברות למוזלקין",
+  "sign_in_google": "התחברות עם Google"
 }
