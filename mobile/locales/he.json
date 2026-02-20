@@ -15,5 +15,7 @@
   "error_fetch": "שגיאה בטעינת האקורדים",
   "auto_scroll": "גלילה אוטומטית",
   "sign_in": "התחברות למוזלקין",
-  "sign_in_google": "התחברות עם Google"
+  "sign_in_google": "התחברות עם Google",
+  "search_placeholder": "שם שיר או אמן…",
+  "search_hint": "חפש שיר כדי לראות את האקורדים שלו"
 }
