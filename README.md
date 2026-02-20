@@ -1,4 +1,4 @@
-# Chord App
+# MuZalkin
 
 A bilingual Hebrew/English chord app for guitar and piano. Users search for songs, the app fetches chords from the web, and displays them with support for RTL (Hebrew) and LTR (English) layouts. Available as a React Native mobile app (iOS + Android) and a React web app.
 
@@ -18,7 +18,7 @@ A bilingual Hebrew/English chord app for guitar and piano. Users search for song
 ## Project Structure
 
 ```
-chord-app/
+MuZalkin/
 ├── CLAUDE.md               — AI assistant context (read first)
 ├── README.md               — this file
 ├── supabase/
@@ -63,16 +63,20 @@ This creates all 5 tables (`users`, `songs`, `playlists`, `playlist_songs`, `cac
 
 ## 2 — Environment Variables
 
-Create a `.env` file in both `mobile/` and `web/`. **Never commit these files.**
+Copy `mobile/.env.example` to `mobile/.env` and fill in your values. **Never commit `.env`.**
 
 ```env
-SUPABASE_URL=https://your-project-id.supabase.co
-SUPABASE_ANON_KEY=your-anon-key-here
+# mobile/.env
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key-here
 ```
 
-For the backend scraper service (writes to `cached_chords`), use the **service role key** instead of the anon key:
+> The `EXPO_PUBLIC_` prefix is required for Expo to bundle variables into the client app.
+
+For the backend/scraper that writes to `cached_chords`, use the **service role key** (never expose this in the mobile app):
 
 ```env
+# backend/.env
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 ```
 

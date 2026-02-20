@@ -1,4 +1,4 @@
-# 🎸 Chord App — Project Context for Claude Code
+# 🎸 MuZalkin — Project Context for Claude Code
 > Read this file at the start of every session. It contains all architectural decisions made before coding began.
 ---
 ## What We're Building
@@ -114,7 +114,7 @@ add_to_playlist, share, loading, error_fetch, auto_scroll
 ---
 ## Project Folder Structure
 ```
-chord-app/
+MuZalkin/
 ├── CLAUDE.md                  ← this file
 ├── scraper/
 │   └── tab4u_scraper.py       ← already written, use as base for other scrapers
@@ -153,6 +153,8 @@ chord-app/
 - State: **React Context** for auth/language, local `useState` for UI state
 - API calls: always use `async/await`, always handle errors
 - Never commit secrets — use `.env` files for Supabase URL + key
+- Expo client env vars must be prefixed `EXPO_PUBLIC_` to be accessible in the app bundle
+- Supabase client is a singleton — always import from `mobile/lib/supabase.ts`
 ---
 ## Development Phases
 ### Phase 1 — MVP (start here)
