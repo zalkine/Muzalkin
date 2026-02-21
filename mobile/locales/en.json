@@ -17,5 +17,19 @@
   "sign_in": "Sign in to MuZalkin",
   "sign_in_google": "Sign in with Google",
   "search_placeholder": "Song or artist name…",
-  "search_hint": "Search for a song to see its chords"
+  "search_hint": "Search for a song to see its chords",
+  "instrument": "Instrument",
+  "my_playlists": "My Playlists",
+  "no_playlists": "No playlists yet",
+  "create_playlist": "Create Playlist",
+  "new_playlist": "New Playlist",
+  "playlist_name": "Playlist name",
+  "cancel": "Cancel",
+  "create": "Create",
+  "sign_out": "Sign Out",
+  "saved": "Saved!",
+  "save_error": "Failed to save song",
+  "error_load": "Failed to load",
+  "songs_count_one": "1 song",
+  "songs_count_other": "{{count}} songs"
 }
