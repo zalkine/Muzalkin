@@ -82,7 +82,9 @@ async function saveToCache({ title, artist, lang, source, chordsData, url }) {
 // Scrapers
 // ---------------------------------------------------------------------------
 
-const SCRAPER_DIR = path.join(__dirname, '../../scraper');
+// Scraper lives alongside the backend when deployed (backend/tab4u_scraper.py)
+// and in scraper/ when running from the repo root locally.
+const SCRAPER_DIR = path.join(__dirname, '..');
 
 function runTab4UScraper(title, artist = '') {
   const args = artist ? [title, artist] : [title];
