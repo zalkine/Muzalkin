@@ -112,4 +112,72 @@ router.delete('/:id', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+// ---------------------------------------------------------------------------
+// PATCH /api/songs/:id/transpose  — update semitone shift for a saved song
+// Body: { transpose: number }
+// ---------------------------------------------------------------------------
+
+router.patch('/:id/transpose', requireAuth, async (req, res) => {
+  const { transpose } = req.body;
+
+  if (typeof transpose !== 'number' || transpose < -11 || transpose > 11) {
+    return res.status(400).json({ error: 'transpose must be an integer between -11 and 11' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('songs')
+    .update({ transpose })
+    .eq('id', req.params.id)
+    .eq('user_id', req.user.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: 'Failed to update transpose' });
+  if (!data) return res.status(404).json({ error: 'Song not found' });
+
+  res.json(data);
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/users/preferences  — update language and/or instrument preference
+// Body: { language?: 'he'|'en', instrument?: 'guitar'|'piano' }
+// ---------------------------------------------------------------------------
+
+router.patch('/preferences', requireAuth, async (req, res) => {
+  const { language, instrument } = req.body;
+  const updates = {};
+
+  if (language !== undefined) {
+    if (!['he', 'en'].includes(language)) {
+      return res.status(400).json({ error: "language must be 'he' or 'en'" });
+    }
+    updates.language = language;
+  }
+
+  if (instrument !== undefined) {
+    if (!['guitar', 'piano'].includes(instrument)) {
+      return res.status(400).json({ error: "instrument must be 'guitar' or 'piano'" });
+    }
+    updates.instrument = instrument;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .update(updates)
+    .eq('id', req.user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Preferences update error:', error.message);
+    return res.status(500).json({ error: 'Failed to update preferences' });
+  }
+
+  res.json(data);
+});
+
 module.exports = router;

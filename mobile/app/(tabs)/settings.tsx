@@ -4,42 +4,90 @@ import {
   I18nManager,
   SafeAreaView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 
 import { supabase, signOut } from '../../lib/supabase';
 
 type Instrument = 'guitar' | 'piano';
+type Language   = 'he' | 'en';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
 
 export default function SettingsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isRTL = I18nManager.isRTL;
 
   const [instrument, setInstrument] = useState<Instrument>('guitar');
-  const [loading, setLoading]       = useState(true);
+  const [language,   setLanguage]   = useState<Language>('he');
+  const [loading,    setLoading]    = useState(true);
 
-  // Load user's instrument preference from Supabase
+  // Load user preferences from Supabase on mount
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) return;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
 
-      supabase
+      const { data } = await supabase
         .from('users')
-        .select('language')
+        .select('language, instrument')
         .eq('id', user.id)
-        .single()
-        .then(({ data }) => {
-          // instrument is stored in users table (we'll use a separate field in a future migration;
-          // for now we read it from the session metadata if present)
-          setLoading(false);
-        });
-    });
+        .single();
+
+      if (data) {
+        if (data.language)   setLanguage(data.language as Language);
+        if (data.instrument) setInstrument(data.instrument as Instrument);
+        // Keep i18next in sync with DB value
+        if (data.language && i18next.language !== data.language) {
+          i18next.changeLanguage(data.language);
+        }
+      }
+      setLoading(false);
+    })();
   }, []);
+
+  // Persist a preference update to backend
+  const savePreference = useCallback(async (updates: { language?: Language; instrument?: Instrument }) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      await fetch(`${BACKEND_URL}/api/songs/preferences`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(updates),
+      });
+    } catch (err) {
+      console.error('Failed to save preference:', err);
+    }
+  }, []);
+
+  // Change language: update state, i18next, and DB
+  const handleLanguageChange = useCallback(async (lang: Language) => {
+    setLanguage(lang);
+    i18next.changeLanguage(lang);
+    await savePreference({ language: lang });
+
+    // Notify about RTL restart requirement if direction changes
+    const needsRTLChange = (lang === 'he') !== I18nManager.isRTL;
+    if (needsRTLChange) {
+      Alert.alert(t('language'), t('language_note'));
+    }
+  }, [savePreference, t]);
+
+  // Change instrument: update state and DB
+  const handleInstrumentChange = useCallback(async (inst: Instrument) => {
+    setInstrument(inst);
+    await savePreference({ instrument: inst });
+  }, [savePreference]);
 
   const handleSignOut = useCallback(async () => {
     Alert.alert(
@@ -70,6 +118,31 @@ export default function SettingsScreen() {
         <Text style={[styles.title, isRTL && styles.textRTL]}>{t('settings')}</Text>
       </View>
 
+      {/* Language */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionLabel, isRTL && styles.textRTL]}>{t('language')}</Text>
+        <View style={[styles.segmentRow, isRTL && styles.rowRTL]}>
+          <TouchableOpacity
+            style={[styles.segment, language === 'he' && styles.segmentActive]}
+            onPress={() => handleLanguageChange('he')}
+          >
+            <Text style={[styles.segmentText, language === 'he' && styles.segmentTextActive]}>
+              {t('language_hebrew')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segment, language === 'en' && styles.segmentActive]}
+            onPress={() => handleLanguageChange('en')}
+          >
+            <Text style={[styles.segmentText, language === 'en' && styles.segmentTextActive]}>
+              {t('language_english')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.divider} />
+
       {/* Instrument */}
       <View style={styles.section}>
         <Text style={[styles.sectionLabel, isRTL && styles.textRTL]}>{t('instrument')}</Text>
@@ -77,7 +150,7 @@ export default function SettingsScreen() {
         <View style={[styles.segmentRow, isRTL && styles.rowRTL]}>
           <TouchableOpacity
             style={[styles.segment, instrument === 'guitar' && styles.segmentActive]}
-            onPress={() => setInstrument('guitar')}
+            onPress={() => handleInstrumentChange('guitar')}
           >
             <Text style={[styles.segmentText, instrument === 'guitar' && styles.segmentTextActive]}>
               {t('instrument_guitar')}
@@ -85,7 +158,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.segment, instrument === 'piano' && styles.segmentActive]}
-            onPress={() => setInstrument('piano')}
+            onPress={() => handleInstrumentChange('piano')}
           >
             <Text style={[styles.segmentText, instrument === 'piano' && styles.segmentTextActive]}>
               {t('instrument_piano')}
@@ -134,7 +207,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   segment: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
     paddingVertical: 9,
     backgroundColor: '#fff',
   },

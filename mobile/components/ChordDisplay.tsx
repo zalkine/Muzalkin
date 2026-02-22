@@ -11,15 +11,17 @@ export type ChordLine = {
 
 type Props = {
   data: ChordLine[];
-  /** Optional ref forwarded to the inner ScrollView for auto-scroll control */
+  /** Forwarded to the inner ScrollView for external scroll control (auto-scroll) */
   scrollRef?: React.RefObject<ScrollView>;
+  /** Called with the current Y offset whenever the user scrolls manually */
+  onScroll?: (y: number) => void;
 };
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ChordDisplay({ data, scrollRef }: Props) {
+export default function ChordDisplay({ data, scrollRef, onScroll }: Props) {
   const isRTL = I18nManager.isRTL;
 
   return (
@@ -28,6 +30,12 @@ export default function ChordDisplay({ data, scrollRef }: Props) {
       style={styles.scroll}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      scrollEventThrottle={16}
+      onScroll={
+        onScroll
+          ? (e) => onScroll(e.nativeEvent.contentOffset.y)
+          : undefined
+      }
     >
       {data.map((line, index) => {
         switch (line.type) {

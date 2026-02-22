@@ -10,8 +10,6 @@
  * Priority order (from CLAUDE.md):
  *   Hebrew  → Tab4U → Nagnu → Negina
  *   English → Ultimate Guitar → Chordify → Tab4U
- *
- * Phase 1 implements Tab4U (Hebrew). Other sources are stubs.
  */
 
 const path          = require('path');
@@ -86,35 +84,38 @@ async function saveToCache({ title, artist, lang, source, chordsData, url }) {
 // and in scraper/ when running from the repo root locally.
 const SCRAPER_DIR = path.join(__dirname, '..');
 
-function runTab4UScraper(title, artist = '') {
-  const args = artist ? [title, artist] : [title];
+function runPythonScraper(scriptName, args) {
   const result = spawnSync(
     'python3',
-    [path.join(SCRAPER_DIR, 'tab4u_scraper.py'), ...args],
+    [path.join(SCRAPER_DIR, scriptName), ...args],
     { encoding: 'utf-8', timeout: 30_000 },
   );
 
   if (result.error) {
-    console.error('Tab4U scraper spawn error:', result.error.message);
+    console.error(`${scriptName} spawn error:`, result.error.message);
     return null;
   }
   if (result.status !== 0) {
-    console.error('Tab4U scraper stderr:', result.stderr);
+    console.error(`${scriptName} stderr:`, result.stderr);
     return null;
   }
 
   try {
     return JSON.parse(result.stdout);
   } catch {
-    console.error('Tab4U scraper returned invalid JSON');
+    console.error(`${scriptName} returned invalid JSON`);
     return null;
   }
 }
 
-// Stub — Phase 2
-function runUltimateGuitarScraper(_title, _artist) {
-  console.warn('Ultimate Guitar scraper not yet implemented');
-  return null;
+function runTab4UScraper(title, artist = '') {
+  const args = artist ? [title, artist] : [title];
+  return runPythonScraper('tab4u_scraper.py', args);
+}
+
+function runUltimateGuitarScraper(title, artist = '') {
+  const args = artist ? [title, artist] : [title];
+  return runPythonScraper('ultimate_guitar_scraper.py', args);
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +130,23 @@ async function searchChords(query, lang = 'he') {
   const cached = await searchCache(query, lang);
   if (cached.length > 0) return cached;
 
-  const scraped = lang === 'he'
-    ? runTab4UScraper(query)
-    : runUltimateGuitarScraper(query, '');
+  let scraped = null;
+  let source  = null;
+
+  if (lang === 'he') {
+    scraped = runTab4UScraper(query);
+    source  = 'tab4u';
+  } else {
+    // English: try Ultimate Guitar first
+    scraped = runUltimateGuitarScraper(query);
+    source  = 'ultimate_guitar';
+
+    // Fallback: try Tab4U English section
+    if (!scraped) {
+      scraped = runTab4UScraper(query);
+      source  = 'tab4u';
+    }
+  }
 
   if (!scraped) return [];
 
@@ -139,7 +154,7 @@ async function searchChords(query, lang = 'he') {
     title:      scraped.title,
     artist:     scraped.artist,
     lang,
-    source:     lang === 'he' ? 'tab4u' : 'ultimate_guitar',
+    source,
     chordsData: scraped.chords_data,
     url:        scraped.url,
   });

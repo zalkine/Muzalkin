@@ -18,7 +18,8 @@ CREATE TABLE users (
   email        text        NOT NULL UNIQUE,
   display_name text        NOT NULL,
   avatar_url   text,
-  language     text        NOT NULL DEFAULT 'he' CHECK (language IN ('he', 'en')),
+  language     text        NOT NULL DEFAULT 'he'    CHECK (language   IN ('he', 'en')),
+  instrument   text        NOT NULL DEFAULT 'guitar' CHECK (instrument IN ('guitar', 'piano')),
   created_at   timestamp   DEFAULT now()
 );
 
