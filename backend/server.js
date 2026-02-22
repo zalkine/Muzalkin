@@ -14,6 +14,7 @@
 
 require('dotenv').config();
 
+const path    = require('path');
 const express = require('express');
 const cors    = require('cors');
 
@@ -29,6 +30,7 @@ const PORT = process.env.PORT ?? 3001;
 
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN ?? '*' }));
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
 // Routes

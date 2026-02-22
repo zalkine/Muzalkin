@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MuZalkin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans Hebrew', 'Segoe UI', sans-serif;
+      background: #0f0f13;
+      color: #e8e8f0;
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+      direction: rtl;
+    }
+
+    header {
+      margin-bottom: 2rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #a78bfa;
+      letter-spacing: -0.5px;
+    }
+
+    h1 span { color: #e8e8f0; }
+
+    .search-form {
+      display: flex;
+      gap: 0.6rem;
+      max-width: 640px;
+      flex-wrap: wrap;
+    }
+
+    input {
+      flex: 1;
+      min-width: 160px;
+      padding: 0.7rem 1rem;
+      background: #1c1c28;
+      border: 1.5px solid #2e2e42;
+      border-radius: 10px;
+      color: #e8e8f0;
+      font-family: inherit;
+      font-size: 1rem;
+      direction: rtl;
+      transition: border-color 0.15s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #a78bfa;
+    }
+
+    input::placeholder { color: #555570; }
+
+    button {
+      padding: 0.7rem 1.4rem;
+      background: #a78bfa;
+      color: #0f0f13;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    button:hover  { background: #c4b5fd; }
+    button:active { background: #8b5cf6; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    #status {
+      margin-top: 1.25rem;
+      font-size: 0.85rem;
+      color: #6b6b8a;
+      min-height: 1.2em;
+    }
+
+    #results {
+      display: none;
+      margin-top: 1.5rem;
+      max-width: 680px;
+      background: #1c1c28;
+      border: 1px solid #2e2e42;
+      border-radius: 14px;
+      padding: 1.5rem 1.75rem;
+    }
+
+    .song-header { margin-bottom: 1.25rem; }
+
+    .song-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .song-artist {
+      font-size: 1rem;
+      color: #a78bfa;
+      margin-top: 0.15rem;
+    }
+
+    .song-meta {
+      font-size: 0.78rem;
+      color: #555570;
+      margin-top: 0.4rem;
+    }
+
+    .song-meta a {
+      color: #6b6b9a;
+      text-decoration: underline;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #2e2e42;
+      margin: 1rem 0;
+    }
+
+    /* Chord/lyric lines — chord notation is always LTR */
+    .line-chords {
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #a78bfa;
+      letter-spacing: 0.08em;
+      direction: ltr;
+      text-align: left;
+      padding: 1px 0;
+      white-space: pre;
+    }
+
+    .line-lyrics {
+      font-size: 0.98rem;
+      color: #d0d0e0;
+      line-height: 1.65;
+      padding: 1px 0;
+    }
+
+    .line-section {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #f59e0b;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-top: 1.2rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .error-box {
+      background: #2d1515;
+      border: 1px solid #5c2222;
+      border-radius: 8px;
+      padding: 0.9rem 1.1rem;
+      color: #f87171;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🎸 Mu<span>Zalkin</span></h1>
+</header>
+
+<form class="search-form" id="searchForm">
+  <input type="text"  id="titleInput"  placeholder="שם השיר"            required autofocus />
+  <input type="text"  id="artistInput" placeholder="שם האמן (לא חובה)" />
+  <button type="submit" id="searchBtn">חפש</button>
+</form>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+  const form       = document.getElementById('searchForm');
+  const titleInput = document.getElementById('titleInput');
+  const artistInput= document.getElementById('artistInput');
+  const searchBtn  = document.getElementById('searchBtn');
+  const statusEl   = document.getElementById('status');
+  const resultsEl  = document.getElementById('results');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const title  = titleInput.value.trim();
+    const artist = artistInput.value.trim();
+    if (!title) return;
+
+    searchBtn.disabled = true;
+    statusEl.textContent = 'מחפש…';
+    resultsEl.style.display = 'none';
+
+    const params = new URLSearchParams({ title, lang: 'he' });
+    if (artist) params.set('artist', artist);
+
+    try {
+      const res  = await fetch(`/chords?${params}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error ?? 'שגיאה לא ידועה');
+        statusEl.textContent = '';
+        return;
+      }
+
+      const cache = data.from_cache ? ' · מהמטמון' : '';
+      statusEl.textContent = `מקור: ${data.source}${cache}`;
+      renderResults(data, title, artist);
+
+    } catch {
+      showError('לא ניתן להתחבר לשרת');
+      statusEl.textContent = '';
+    } finally {
+      searchBtn.disabled = false;
+    }
+  });
+
+  function renderResults(data, title, artist) {
+    const lines = data.chords_data ?? [];
+
+    const linesHtml = lines.map(({ type, content }) => {
+      const text = esc(content);
+      if (type === 'chords')  return `<div class="line-chords">${text}</div>`;
+      if (type === 'section') return `<div class="line-section">${text}</div>`;
+      return `<div class="line-lyrics">${text}</div>`;
+    }).join('');
+
+    const artistHtml = artist
+      ? `<div class="song-artist">${esc(artist)}</div>`
+      : '';
+
+    const sourceHtml = data.raw_url
+      ? `<div class="song-meta">מקור: <a href="${esc(data.raw_url)}" target="_blank" rel="noopener">${esc(data.raw_url)}</a></div>`
+      : '';
+
+    resultsEl.innerHTML = `
+      <div class="song-header">
+        <div class="song-title">${esc(title)}</div>
+        ${artistHtml}
+        ${sourceHtml}
+      </div>
+      <hr class="divider" />
+      ${linesHtml}
+    `;
+    resultsEl.style.display = 'block';
+  }
+
+  function showError(msg) {
+    resultsEl.innerHTML = `<div class="error-box">${esc(msg)}</div>`;
+    resultsEl.style.display = 'block';
+  }
+
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>

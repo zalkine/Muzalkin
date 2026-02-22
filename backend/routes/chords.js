@@ -24,8 +24,8 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const { title, artist, lang } = req.query;
 
-  if (!title || !artist) {
-    return res.status(400).json({ error: 'title and artist query params are required' });
+  if (!title) {
+    return res.status(400).json({ error: 'title query param is required' });
   }
 
   const language = lang === 'en' ? 'en' : 'he';
@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await routeChords(
       String(title).trim(),
-      String(artist).trim(),
+      artist ? String(artist).trim() : '',
       language,
     );
 
