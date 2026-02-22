@@ -75,6 +75,7 @@ async function scrapeTab4U(title, artist) {
     const query = encodeURIComponent(`${title} ${artist}`);
     const searchUrl = `https://www.tab4u.com/resultsSimple?tab=songs&q=${query}`;
 
+    console.log(`[Tab4U] Searching: ${searchUrl}`);
     await sleep(1000);
     const searchRes = await axios.get(searchUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 MuZalkin/1.0' },
@@ -83,6 +84,7 @@ async function scrapeTab4U(title, artist) {
 
     const $search = cheerio.load(searchRes.data);
     const firstLink = $search('table.song_results a.song_link').first().attr('href');
+    console.log(`[Tab4U] First link found: ${firstLink}`);
     if (!firstLink) return null;
 
     const songUrl = firstLink.startsWith('http')
@@ -112,9 +114,11 @@ async function scrapeTab4U(title, artist) {
       }
     });
 
+    console.log(`[Tab4U] Parsed ${chordsData.length} lines`);
     if (chordsData.length === 0) return null;
     return { chords_data: chordsData, raw_url: songUrl };
-  } catch {
+  } catch (err) {
+    console.error(`[Tab4U] Error: ${err.message}`);
     return null;
   }
 }
@@ -181,6 +185,7 @@ async function scrapeUltimateGuitar(title, artist) {
 
     const query = encodeURIComponent(`${title} ${artist}`);
     const searchUrl = `https://www.ultimate-guitar.com/search.php?title=${query}&type=Chords`;
+    console.log(`[UG] Searching: ${searchUrl}`);
 
     await sleep(1000);
     const searchRes = await axios.get(searchUrl, {
@@ -192,6 +197,7 @@ async function scrapeUltimateGuitar(title, artist) {
     });
 
     const dataMatch = searchRes.data.match(/class="js-store" data-content="([^"]+)"/);
+    console.log(`[UG] js-store found: ${!!dataMatch}`);
     if (!dataMatch) return null;
 
     const rawJson = dataMatch[1].replace(/&quot;/g, '"');
@@ -220,10 +226,12 @@ async function scrapeUltimateGuitar(title, artist) {
     if (!rawTab) return null;
 
     const chordsData = parseUGContent(rawTab);
+    console.log(`[UG] Parsed ${chordsData.length} lines`);
     if (chordsData.length === 0) return null;
 
     return { chords_data: chordsData, raw_url: chordsResult.tab_url };
-  } catch {
+  } catch (err) {
+    console.error(`[UG] Error: ${err.message}`);
     return null;
   }
 }
