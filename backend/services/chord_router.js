@@ -83,13 +83,13 @@ async function scrapeTab4U(title, artist) {
     });
 
     const $search = cheerio.load(searchRes.data);
-    const firstLink = $search('table.song_results a.song_link').first().attr('href');
+    const firstLink = $search('a[href*="tabs/songs/"]').first().attr('href');
     console.log(`[Tab4U] First link found: ${firstLink}`);
     if (!firstLink) return null;
 
     const songUrl = firstLink.startsWith('http')
       ? firstLink
-      : `https://www.tab4u.com${firstLink}`;
+      : `https://www.tab4u.com/${firstLink.replace(/^\//, '')}`;
 
     await sleep(1000);
     const songRes = await axios.get(songUrl, {
@@ -99,6 +99,8 @@ async function scrapeTab4U(title, artist) {
 
     const $ = cheerio.load(songRes.data);
     const chordsData = [];
+
+    console.log(`[Tab4U] Song page fetched, #song_chords found: ${$('#song_chords').length}, spans: ${$('#song_chords span').length}`);
 
     $('#song_chords span').each((_, el) => {
       const cls = $(el).attr('class') ?? '';
@@ -190,8 +192,17 @@ async function scrapeUltimateGuitar(title, artist) {
     await sleep(1000);
     const searchRes = await axios.get(searchUrl, {
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
       },
       timeout: 10000,
     });
@@ -210,8 +221,17 @@ async function scrapeUltimateGuitar(title, artist) {
     await sleep(1000);
     const tabRes = await axios.get(chordsResult.tab_url, {
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Referer': 'https://www.ultimate-guitar.com/',
+        'Cache-Control': 'max-age=0',
       },
       timeout: 10000,
     });
