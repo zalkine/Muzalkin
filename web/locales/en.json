@@ -13,5 +13,8 @@
   "share": "Share",
   "loading": "Loading...",
   "error_fetch": "Failed to load chords",
-  "auto_scroll": "Auto Scroll"
+  "auto_scroll": "Auto Scroll",
+  "fetch_from_web": "Can't find it? Fetch from web ›",
+  "artist_placeholder": "Artist name...",
+  "fetch": "Fetch"
 }

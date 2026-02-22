@@ -17,5 +17,8 @@
   "sign_in": "Sign in to MuZalkin",
   "sign_in_google": "Sign in with Google",
   "search_placeholder": "Song or artist name…",
-  "search_hint": "Search for a song to see its chords"
+  "search_hint": "Search for a song to see its chords",
+  "fetch_from_web": "Can't find it? Fetch from web ›",
+  "artist_placeholder": "Artist name...",
+  "fetch": "Fetch"
 }

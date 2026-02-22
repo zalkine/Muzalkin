@@ -31,55 +31,38 @@ type SongData = {
   source_url?: string;
 };
 
-// ---------------------------------------------------------------------------
-// Mock data for development (removed once chord_router is wired)
-// ---------------------------------------------------------------------------
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-const MOCK_SONGS: Record<string, SongData> = {
-  '1': {
-    id: '1',
-    title: 'לאט לאט',
-    artist: 'עידן רייכל',
-    instrument: 'guitar',
-    language: 'he',
-    transpose: 0,
-    chords_data: [
-      { type: 'section', content: 'פתיחה' },
-      { type: 'chords', content: 'Am   G    F    E7' },
-      { type: 'lyrics',  content: 'לאט לאט הגיע הלילה' },
-      { type: 'chords', content: 'Am   G    F    E7' },
-      { type: 'lyrics',  content: 'לאט לאט נגמר היום' },
-      { type: 'section', content: 'פזמון' },
-      { type: 'chords', content: 'Dm   Am   Bb   E7' },
-      { type: 'lyrics',  content: 'ואני שוב לבד עם כל המחשבות' },
-      { type: 'chords', content: 'Dm   Am   Bb   E7' },
-      { type: 'lyrics',  content: 'ואני שוב עם כל האהבות' },
-    ],
-  },
-  '4': {
-    id: '4',
-    title: 'Wonderwall',
-    artist: 'Oasis',
-    instrument: 'guitar',
-    language: 'en',
-    transpose: 0,
-    chords_data: [
-      { type: 'section', content: 'Verse 1' },
-      { type: 'chords', content: 'Em7  G    Dsus4 A7sus4' },
-      { type: 'lyrics',  content: "Today is gonna be the day" },
-      { type: 'chords', content: 'Em7  G    Dsus4 A7sus4' },
-      { type: 'lyrics',  content: "That they're gonna throw it back to you" },
-      { type: 'section', content: 'Chorus' },
-      { type: 'chords', content: 'C    Em7  G    Em7' },
-      { type: 'lyrics',  content: "And all the roads we have to walk are winding" },
-      { type: 'chords', content: 'C    Em7  G    Em7' },
-      { type: 'lyrics',  content: "And all the lights that lead us there are blinding" },
-    ],
-  },
-};
+/** Fetch song data — handles new web fetch, saved songs, and cached chords. */
+async function loadSong(
+  id: string,
+  title?: string,
+  artist?: string,
+  lang?: string,
+): Promise<SongData | null> {
+  // New song: fetch from backend (chord_router scrapes + caches automatically)
+  if (id === 'new') {
+    if (!title || !artist) return null;
+    try {
+      const params = new URLSearchParams({ title, artist, lang: lang ?? 'he' });
+      const res = await fetch(`${API_URL}/chords?${params.toString()}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return {
+        id: 'new',
+        title,
+        artist,
+        instrument: 'guitar',
+        language: lang ?? 'he',
+        transpose: 0,
+        chords_data: data.chords_data,
+        source_url: data.raw_url,
+      };
+    } catch {
+      return null;
+    }
+  }
 
-/** Fetch song data — checks Supabase first, then falls back to mock. */
-async function loadSong(id: string): Promise<SongData | null> {
   // 1. Try saved songs table
   const { data: saved } = await supabase
     .from('songs')
@@ -88,7 +71,7 @@ async function loadSong(id: string): Promise<SongData | null> {
     .single();
   if (saved) return saved as SongData;
 
-  // 2. Try cached_chords table (id stored there)
+  // 2. Try cached_chords table
   const { data: cached } = await supabase
     .from('cached_chords')
     .select('*')
@@ -107,8 +90,7 @@ async function loadSong(id: string): Promise<SongData | null> {
     };
   }
 
-  // 3. Development fallback
-  return MOCK_SONGS[id] ?? null;
+  return null;
 }
 
 /** Persist the song to the `songs` table for the authenticated user. */
@@ -136,7 +118,12 @@ async function saveSong(song: SongData, semitones: number): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export default function SongScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, title, artist, lang } = useLocalSearchParams<{
+    id: string;
+    title?: string;
+    artist?: string;
+    lang?: string;
+  }>();
   const { t } = useTranslation();
   const isRTL = I18nManager.isRTL;
 
@@ -152,7 +139,7 @@ export default function SongScreen() {
   // Load song on mount
   useEffect(() => {
     if (!id) return;
-    loadSong(id)
+    loadSong(id, title, artist, lang)
       .then((data) => {
         setSong(data);
         if (data) setSemitones(data.transpose ?? 0);

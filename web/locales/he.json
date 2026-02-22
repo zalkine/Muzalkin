@@ -13,5 +13,8 @@
   "share": "שתף",
   "loading": "טוען...",
   "error_fetch": "שגיאה בטעינת האקורדים",
-  "auto_scroll": "גלילה אוטומטית"
+  "auto_scroll": "גלילה אוטומטית",
+  "fetch_from_web": "לא מצאת? הבא מהאינטרנט ›",
+  "artist_placeholder": "שם האמן...",
+  "fetch": "הבא"
 }

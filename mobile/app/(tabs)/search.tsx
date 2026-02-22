@@ -14,6 +14,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
 
+import { supabase } from '../../lib/supabase';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -22,32 +24,62 @@ type SearchResult = {
   id: string;
   title: string;
   artist: string;
+  source?: string;
 };
 
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 // ---------------------------------------------------------------------------
-// Mock data — replace this function with the real chord_router / Supabase call
+// Search against Supabase cached_chords + user's saved songs
 // ---------------------------------------------------------------------------
 
-const MOCK_DATA: SearchResult[] = [
-  { id: '1', title: 'לאט לאט',         artist: 'עידן רייכל' },
-  { id: '2', title: 'קיצות',            artist: 'מוקי' },
-  { id: '3', title: 'משהו מתוק',        artist: 'שלמה ארצי' },
-  { id: '4', title: 'Wonderwall',       artist: 'Oasis' },
-  { id: '5', title: 'Hotel California', artist: 'Eagles' },
-  { id: '6', title: 'Let Her Go',       artist: 'Passenger' },
-];
+async function searchSongs(query: string): Promise<SearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
 
-async function fetchSearchResults(query: string): Promise<SearchResult[]> {
-  // TODO: replace with real search — check cached_chords, then scrape via chord_router
-  await new Promise((r) => setTimeout(r, 700)); // simulate latency
-  const q = query.trim().toLowerCase();
-  return MOCK_DATA.filter(
-    (r) =>
-      r.title.toLowerCase().includes(q) ||
-      r.artist.toLowerCase().includes(q)
-  );
+  // 1. Search cached_chords
+  const { data: cached } = await supabase
+    .from('cached_chords')
+    .select('id, song_title, artist, source')
+    .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
+    .limit(20);
+
+  // 2. Search user's saved songs (if authenticated)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  let saved: Array<{ id: string; title: string; artist: string }> = [];
+  if (user) {
+    const { data } = await supabase
+      .from('songs')
+      .select('id, title, artist')
+      .eq('user_id', user.id)
+      .or(`title.ilike.%${q}%,artist.ilike.%${q}%`)
+      .limit(10);
+    saved = (data ?? []) as typeof saved;
+  }
+
+  // Merge: saved songs first (preferred), then cache — dedup by title+artist
+  const seen = new Set<string>();
+  const results: SearchResult[] = [];
+
+  for (const s of saved) {
+    const key = `${s.title}|${s.artist}`.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push({ id: s.id, title: s.title, artist: s.artist, source: 'saved' });
+    }
+  }
+
+  for (const c of cached ?? []) {
+    const key = `${c.song_title}|${c.artist}`.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      results.push({ id: c.id, title: c.song_title, artist: c.artist, source: c.source });
+    }
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,23 +90,35 @@ export default function SearchScreen() {
   const { t } = useTranslation();
   const isRTL = I18nManager.isRTL;
 
-  const [query, setQuery]     = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [status, setStatus]   = useState<Status>('idle');
-  const inputRef              = useRef<TextInput>(null);
+  const [query, setQuery]                 = useState('');
+  const [results, setResults]             = useState<SearchResult[]>([]);
+  const [status, setStatus]               = useState<Status>('idle');
+  const [showFetchForm, setShowFetchForm] = useState(false);
+  const [fetchArtist, setFetchArtist]     = useState('');
+  const inputRef                          = useRef<TextInput>(null);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
     Keyboard.dismiss();
     setStatus('loading');
+    setShowFetchForm(false);
     try {
-      const data = await fetchSearchResults(query);
+      const data = await searchSongs(query);
       setResults(data);
       setStatus('done');
     } catch {
       setStatus('error');
     }
   }, [query]);
+
+  const handleFetchFromWeb = useCallback(() => {
+    if (!query.trim() || !fetchArtist.trim()) return;
+    Keyboard.dismiss();
+    const lang = isRTL ? 'he' : 'en';
+    router.push(
+      `/song/new?title=${encodeURIComponent(query.trim())}&artist=${encodeURIComponent(fetchArtist.trim())}&lang=${lang}`,
+    );
+  }, [query, fetchArtist, isRTL]);
 
   return (
     <SafeAreaView style={[styles.safe, isRTL && styles.safeRTL]}>
@@ -127,25 +171,62 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {status === 'done' && results.length === 0 && (
-        <View style={styles.center}>
-          <Text style={[styles.hint, isRTL && styles.textRTL]}>
-            {t('no_results')}
-          </Text>
-        </View>
-      )}
-
-      {status === 'done' && results.length > 0 && (
-        <FlatList
-          data={results}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item }) => (
-            <ResultItem item={item} isRTL={isRTL} />
+      {status === 'done' && (
+        <>
+          {results.length === 0 && (
+            <View style={styles.noResultsContainer}>
+              <Text style={[styles.hint, isRTL && styles.textRTL]}>
+                {t('no_results')}
+              </Text>
+            </View>
           )}
-        />
+
+          {results.length > 0 && (
+            <FlatList
+              data={results}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.list}
+              keyboardShouldPersistTaps="handled"
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
+              renderItem={({ item }) => (
+                <ResultItem item={item} isRTL={isRTL} />
+              )}
+            />
+          )}
+
+          {/* ── Fetch from web ── */}
+          {!showFetchForm ? (
+            <TouchableOpacity
+              style={[styles.fetchRow, isRTL && styles.fetchRowRTL]}
+              onPress={() => setShowFetchForm(true)}
+            >
+              <Text style={[styles.fetchRowText, isRTL && styles.textRTL]}>
+                {t('fetch_from_web')}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.fetchForm, isRTL && styles.fetchFormRTL]}>
+              <TextInput
+                style={[styles.fetchInput, isRTL && styles.inputRTL]}
+                placeholder={t('artist_placeholder')}
+                placeholderTextColor="#aaa"
+                value={fetchArtist}
+                onChangeText={setFetchArtist}
+                autoCapitalize="none"
+                autoCorrect={false}
+                textAlign={isRTL ? 'right' : 'left'}
+                autoFocus
+              />
+              <TouchableOpacity
+                style={[styles.fetchBtn, !fetchArtist.trim() && styles.searchBtnDisabled]}
+                onPress={handleFetchFromWeb}
+                disabled={!fetchArtist.trim()}
+              >
+                <Text style={styles.searchBtnText}>{t('fetch')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
     </SafeAreaView>
   );
@@ -242,6 +323,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 12,
   },
+  noResultsContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
   hint: {
     fontSize: 15,
     color: '#888',
@@ -265,6 +352,7 @@ const styles = StyleSheet.create({
   // Results list
   list: {
     paddingVertical: 4,
+    flexGrow: 1,
   },
   separator: {
     height: StyleSheet.hairlineWidth,
@@ -297,5 +385,52 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#bbb',
     marginHorizontal: 4,
+  },
+
+  // Fetch from web
+  fetchRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e0e0e0',
+    alignItems: 'center',
+  },
+  fetchRowRTL: {
+    flexDirection: 'row-reverse',
+  },
+  fetchRowText: {
+    fontSize: 14,
+    color: '#4285F4',
+    fontWeight: '500',
+  },
+  fetchForm: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#e0e0e0',
+  },
+  fetchFormRTL: {
+    flexDirection: 'row-reverse',
+  },
+  fetchInput: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 15,
+    backgroundColor: '#f9f9f9',
+  },
+  fetchBtn: {
+    height: 40,
+    paddingHorizontal: 16,
+    backgroundColor: '#4285F4',
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
