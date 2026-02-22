@@ -100,19 +100,29 @@ async function scrapeTab4U(title, artist) {
     const $ = cheerio.load(songRes.data);
     const chordsData = [];
 
-    console.log(`[Tab4U] Song page fetched, #song_chords found: ${$('#song_chords').length}, spans: ${$('#song_chords span').length}`);
+    console.log(`[Tab4U] Song page fetched, #songContentTPL found: ${$('#songContentTPL').length}`);
 
-    $('#song_chords span').each((_, el) => {
-      const cls = $(el).attr('class') ?? '';
-      const text = $(el).text().trim();
-      if (!text) return;
-
-      if (cls.includes('chords')) {
-        chordsData.push({ type: 'chords', content: text });
-      } else if (cls.includes('title') || cls.includes('section')) {
-        chordsData.push({ type: 'section', content: text });
+    // Tab4U uses a table layout: chord rows have td.chords cells, lyric rows are plain tr
+    $('#songContentTPL table tr').each((_, row) => {
+      const chordCells = $(row).find('td.chords');
+      if (chordCells.length > 0) {
+        // Chord row — collect all chord names, skip pipe separators
+        const chords = chordCells
+          .map((_, td) => $(td).text().trim())
+          .get()
+          .filter(Boolean)
+          .join('  ');
+        if (chords) chordsData.push({ type: 'chords', content: chords });
       } else {
-        chordsData.push({ type: 'lyrics', content: text });
+        // Check for section tag (e.g. Verse, Chorus)
+        const tag = $(row).find('td.songTag, td[class*="tag"]');
+        if (tag.length > 0) {
+          const text = tag.text().trim();
+          if (text) chordsData.push({ type: 'section', content: text });
+        } else {
+          const text = $(row).text().trim();
+          if (text) chordsData.push({ type: 'lyrics', content: text });
+        }
       }
     });
 
