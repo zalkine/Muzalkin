@@ -20,6 +20,7 @@ const cors    = require('cors');
 
 const chordsRouter = require('./routes/chords');
 const songsRouter  = require('./routes/songs');
+const searchRouter = require('./routes/search');
 
 const app  = express();
 const PORT = process.env.PORT ?? 3001;
@@ -36,8 +37,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Routes
 // ---------------------------------------------------------------------------
 
-app.use('/chords', chordsRouter);
-app.use('/songs',  songsRouter);
+app.use('/chords',  chordsRouter);
+app.use('/songs',   songsRouter);
+app.use('/search',  searchRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

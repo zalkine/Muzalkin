@@ -17,65 +17,137 @@ import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
 
 // ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+/** A single search result row shown to the user. */
 type SearchResult = {
-  id: string;
+  /** DB id — only set for results already stored in Supabase. */
+  id?: string;
   title: string;
   artist: string;
-  source?: string;
+  /**
+   * Where this result came from:
+   *   'saved'   – user's own saved song (songs table)
+   *   'tab4u'   – found on Tab4U.com
+   *   'negina'  – found on negina.co.il
+   *   'nagnu'   – found on nagnu.co.il
+   *   'ultimate_guitar' – found on ultimate-guitar.com
+   */
+  source: string;
+  /** True when the result is already in Supabase (navigate by id). */
+  from_db: boolean;
 };
 
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 // ---------------------------------------------------------------------------
-// Search against Supabase cached_chords + user's saved songs
+// Source badge config
 // ---------------------------------------------------------------------------
 
-async function searchSongs(query: string): Promise<SearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
+const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
+  saved:           { label: 'שמור',    color: '#27ae60' },
+  tab4u:           { label: 'Tab4U',   color: '#e67e22' },
+  negina:          { label: 'Negina',  color: '#8e44ad' },
+  nagnu:           { label: 'נגנו',    color: '#16a085' },
+  ultimate_guitar: { label: 'UG',      color: '#c0392b' },
+};
 
-  // 1. Search cached_chords
-  const { data: cached } = await supabase
-    .from('cached_chords')
-    .select('id, song_title, artist, source')
-    .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
-    .limit(20);
+function sourceBadge(source: string) {
+  return SOURCE_BADGE[source] ?? { label: source, color: '#555' };
+}
 
-  // 2. Search user's saved songs (if authenticated)
+// ---------------------------------------------------------------------------
+// Data fetching helpers
+// ---------------------------------------------------------------------------
+
+/** Search the user's saved songs in Supabase. */
+async function searchSavedSongs(query: string): Promise<SearchResult[]> {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  let saved: Array<{ id: string; title: string; artist: string }> = [];
-  if (user) {
-    const { data } = await supabase
-      .from('songs')
-      .select('id, title, artist')
-      .eq('user_id', user.id)
-      .or(`title.ilike.%${q}%,artist.ilike.%${q}%`)
-      .limit(10);
-    saved = (data ?? []) as typeof saved;
-  }
+  if (!user) return [];
 
-  // Merge: saved songs first (preferred), then cache — dedup by title+artist
+  const { data } = await supabase
+    .from('songs')
+    .select('id, title, artist')
+    .eq('user_id', user.id)
+    .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
+    .limit(10);
+
+  return (data ?? []).map((s) => ({
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    source: 'saved',
+    from_db: true,
+  }));
+}
+
+/** Search web sources via the backend /search endpoint. */
+async function searchWeb(
+  query: string,
+  lang: string,
+): Promise<SearchResult[]> {
+  try {
+    const params = new URLSearchParams({ q: query, lang });
+    const res = await fetch(`${API_URL}/search?${params.toString()}`);
+    if (!res.ok) return [];
+    const items: Array<{ title: string; artist: string; source: string }> =
+      await res.json();
+    return items.map((item) => ({
+      title:   item.title,
+      artist:  item.artist,
+      source:  item.source,
+      from_db: false,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Full search: saved songs first (fastest, needs no web call),
+ * then web sources (Tab4U → Negina → Nagnu).
+ * Deduplicates by title+artist.
+ */
+async function searchAll(
+  query: string,
+  lang: string,
+): Promise<SearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+
+  // Run both in parallel — saved songs search is fast, web search is slower
+  const [saved, web] = await Promise.all([
+    searchSavedSongs(q),
+    searchWeb(q, lang),
+  ]);
+
   const seen = new Set<string>();
   const results: SearchResult[] = [];
 
-  for (const s of saved) {
-    const key = `${s.title}|${s.artist}`.toLowerCase();
+  // Saved songs have priority — they appear first
+  for (const item of saved) {
+    const key = `${item.title}|${item.artist}`.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
-      results.push({ id: s.id, title: s.title, artist: s.artist, source: 'saved' });
+      results.push(item);
     }
   }
 
-  for (const c of cached ?? []) {
-    const key = `${c.song_title}|${c.artist}`.toLowerCase();
+  // Then web results in source order (tab4u, negina, nagnu)
+  for (const item of web) {
+    const key = `${item.title}|${item.artist}`.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
-      results.push({ id: c.id, title: c.song_title, artist: c.artist, source: c.source });
+      results.push(item);
     }
   }
 
@@ -87,44 +159,45 @@ async function searchSongs(query: string): Promise<SearchResult[]> {
 // ---------------------------------------------------------------------------
 
 export default function SearchScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isRTL = I18nManager.isRTL;
+  const lang  = i18n.language === 'he' ? 'he' : 'en';
 
-  const [query, setQuery]                 = useState('');
-  const [results, setResults]             = useState<SearchResult[]>([]);
-  const [status, setStatus]               = useState<Status>('idle');
-  const [showFetchForm, setShowFetchForm] = useState(false);
-  const [fetchArtist, setFetchArtist]     = useState('');
-  const inputRef                          = useRef<TextInput>(null);
+  const [query,   setQuery]   = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [status,  setStatus]  = useState<Status>('idle');
+  const inputRef              = useRef<TextInput>(null);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
     Keyboard.dismiss();
     setStatus('loading');
-    setShowFetchForm(false);
     try {
-      const data = await searchSongs(query);
+      const data = await searchAll(query, lang);
       setResults(data);
       setStatus('done');
     } catch {
       setStatus('error');
     }
-  }, [query]);
+  }, [query, lang]);
 
-  const handleFetchFromWeb = useCallback(() => {
-    if (!query.trim() || !fetchArtist.trim()) return;
-    Keyboard.dismiss();
-    const lang = isRTL ? 'he' : 'en';
-    router.push(
-      `/song/new?title=${encodeURIComponent(query.trim())}&artist=${encodeURIComponent(fetchArtist.trim())}&lang=${lang}`,
-    );
-  }, [query, fetchArtist, isRTL]);
+  const handleSelectResult = useCallback((item: SearchResult) => {
+    if (item.from_db && item.id) {
+      // Already in DB — load directly
+      router.push(`/song/${item.id}`);
+    } else {
+      // Fetch from web via backend chord_router
+      router.push(
+        `/song/new?title=${encodeURIComponent(item.title)}&artist=${encodeURIComponent(item.artist ?? '')}&lang=${lang}`,
+      );
+    }
+  }, [lang]);
 
   return (
-    <SafeAreaView style={[styles.safe, isRTL && styles.safeRTL]}>
+    <SafeAreaView style={styles.safe}>
 
       {/* ── Search bar ── */}
-      <View style={styles.searchRow}>
+      <View style={[styles.searchRow, isRTL && styles.searchRowRTL]}>
         <TextInput
           ref={inputRef}
           style={[styles.input, isRTL && styles.inputRTL]}
@@ -147,7 +220,7 @@ export default function SearchScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── Content area ── */}
+      {/* ── Idle hint ── */}
       {status === 'idle' && (
         <View style={styles.center}>
           <Text style={[styles.hint, isRTL && styles.textRTL]}>
@@ -156,13 +229,17 @@ export default function SearchScreen() {
         </View>
       )}
 
+      {/* ── Loading ── */}
       {status === 'loading' && (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#4285F4" />
-          <Text style={styles.loadingText}>{t('loading')}</Text>
+          <Text style={[styles.loadingText, isRTL && styles.textRTL]}>
+            {t('searching_sources')}
+          </Text>
         </View>
       )}
 
+      {/* ── Error ── */}
       {status === 'error' && (
         <View style={styles.center}>
           <Text style={[styles.errorText, isRTL && styles.textRTL]}>
@@ -171,60 +248,39 @@ export default function SearchScreen() {
         </View>
       )}
 
+      {/* ── Results ── */}
       {status === 'done' && (
         <>
-          {results.length === 0 && (
-            <View style={styles.noResultsContainer}>
+          {results.length === 0 ? (
+            <View style={styles.center}>
               <Text style={[styles.hint, isRTL && styles.textRTL]}>
                 {t('no_results')}
               </Text>
             </View>
-          )}
-
-          {results.length > 0 && (
-            <FlatList
-              data={results}
-              keyExtractor={(item) => item.id}
-              contentContainerStyle={styles.list}
-              keyboardShouldPersistTaps="handled"
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-              renderItem={({ item }) => (
-                <ResultItem item={item} isRTL={isRTL} />
-              )}
-            />
-          )}
-
-          {/* ── Fetch from web ── */}
-          {!showFetchForm ? (
-            <TouchableOpacity
-              style={[styles.fetchRow, isRTL && styles.fetchRowRTL]}
-              onPress={() => setShowFetchForm(true)}
-            >
-              <Text style={[styles.fetchRowText, isRTL && styles.textRTL]}>
-                {t('fetch_from_web')}
-              </Text>
-            </TouchableOpacity>
           ) : (
-            <View style={[styles.fetchForm, isRTL && styles.fetchFormRTL]}>
-              <TextInput
-                style={[styles.fetchInput, isRTL && styles.inputRTL]}
-                placeholder={t('artist_placeholder')}
-                placeholderTextColor="#aaa"
-                value={fetchArtist}
-                onChangeText={setFetchArtist}
-                autoCapitalize="none"
-                autoCorrect={false}
-                textAlign={isRTL ? 'right' : 'left'}
-                autoFocus
+            <>
+              {/* Result count */}
+              <View style={[styles.countRow, isRTL && styles.countRowRTL]}>
+                <Text style={[styles.countText, isRTL && styles.textRTL]}>
+                  {results.length} {t('results_found')}
+                </Text>
+              </View>
+
+              <FlatList
+                data={results}
+                keyExtractor={(item, idx) => item.id ?? `${item.source}-${idx}`}
+                contentContainerStyle={styles.list}
+                keyboardShouldPersistTaps="handled"
+                ItemSeparatorComponent={() => <View style={styles.separator} />}
+                renderItem={({ item }) => (
+                  <ResultItem
+                    item={item}
+                    isRTL={isRTL}
+                    onPress={handleSelectResult}
+                  />
+                )}
               />
-              <TouchableOpacity
-                style={[styles.fetchBtn, !fetchArtist.trim() && styles.searchBtnDisabled]}
-                onPress={handleFetchFromWeb}
-                disabled={!fetchArtist.trim()}
-              >
-                <Text style={styles.searchBtnText}>{t('fetch')}</Text>
-              </TouchableOpacity>
-            </View>
+            </>
           )}
         </>
       )}
@@ -236,28 +292,47 @@ export default function SearchScreen() {
 // Result row
 // ---------------------------------------------------------------------------
 
-function ResultItem({ item, isRTL }: { item: SearchResult; isRTL: boolean }) {
+function ResultItem({
+  item,
+  isRTL,
+  onPress,
+}: {
+  item: SearchResult;
+  isRTL: boolean;
+  onPress: (item: SearchResult) => void;
+}) {
+  const badge = sourceBadge(item.source);
+
   return (
     <TouchableOpacity
       style={[styles.resultRow, isRTL && styles.resultRowRTL]}
-      onPress={() => router.push(`/song/${item.id}`)}
+      onPress={() => onPress(item)}
       activeOpacity={0.7}
     >
-      <View style={styles.resultText}>
+      {/* Text block */}
+      <View style={[styles.resultText, isRTL && styles.resultTextRTL]}>
         <Text
           style={[styles.resultTitle, isRTL && styles.textRTL]}
           numberOfLines={1}
         >
           {item.title}
         </Text>
-        <Text
-          style={[styles.resultArtist, isRTL && styles.textRTL]}
-          numberOfLines={1}
-        >
-          {item.artist}
-        </Text>
+        {!!item.artist && (
+          <Text
+            style={[styles.resultArtist, isRTL && styles.textRTL]}
+            numberOfLines={1}
+          >
+            {item.artist}
+          </Text>
+        )}
       </View>
-      {/* Chevron flips direction for RTL */}
+
+      {/* Source badge */}
+      <View style={[styles.badge, { backgroundColor: badge.color }]}>
+        <Text style={styles.badgeText}>{badge.label}</Text>
+      </View>
+
+      {/* Chevron */}
       <Text style={styles.chevron}>{isRTL ? '‹' : '›'}</Text>
     </TouchableOpacity>
   );
@@ -272,9 +347,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  safeRTL: {
-    direction: 'rtl',
-  },
 
   // Search bar
   searchRow: {
@@ -284,6 +356,9 @@ const styles = StyleSheet.create({
     gap: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e0e0e0',
+  },
+  searchRowRTL: {
+    flexDirection: 'row-reverse',
   },
   input: {
     flex: 1,
@@ -323,12 +398,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 12,
   },
-  noResultsContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
   hint: {
     fontSize: 15,
     color: '#888',
@@ -338,6 +407,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 8,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: 15,
@@ -349,6 +419,23 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
+  // Result count row
+  countRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
+  },
+  countRowRTL: {
+    flexDirection: 'row-reverse',
+  },
+  countText: {
+    fontSize: 12,
+    color: '#999',
+  },
+
   // Results list
   list: {
     paddingVertical: 4,
@@ -356,14 +443,15 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#e8e8e8',
     marginHorizontal: 16,
   },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 16,
+    gap: 10,
   },
   resultRowRTL: {
     flexDirection: 'row-reverse',
@@ -371,6 +459,9 @@ const styles = StyleSheet.create({
   resultText: {
     flex: 1,
     gap: 3,
+  },
+  resultTextRTL: {
+    alignItems: 'flex-end',
   },
   resultTitle: {
     fontSize: 16,
@@ -381,56 +472,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
   },
-  chevron: {
-    fontSize: 20,
-    color: '#bbb',
-    marginHorizontal: 4,
+
+  // Source badge
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    alignSelf: 'center',
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
 
-  // Fetch from web
-  fetchRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e0e0e0',
-    alignItems: 'center',
-  },
-  fetchRowRTL: {
-    flexDirection: 'row-reverse',
-  },
-  fetchRowText: {
-    fontSize: 14,
-    color: '#4285F4',
-    fontWeight: '500',
-  },
-  fetchForm: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e0e0e0',
-  },
-  fetchFormRTL: {
-    flexDirection: 'row-reverse',
-  },
-  fetchInput: {
-    flex: 1,
-    height: 40,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    backgroundColor: '#f9f9f9',
-  },
-  fetchBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    backgroundColor: '#4285F4',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chevron: {
+    fontSize: 18,
+    color: '#bbb',
   },
 });

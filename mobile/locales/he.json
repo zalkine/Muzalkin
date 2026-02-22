@@ -20,5 +20,16 @@
   "search_hint": "חפש שיר כדי לראות את האקורדים שלו",
   "fetch_from_web": "לא מצאת? הבא מהאינטרנט ›",
   "artist_placeholder": "שם האמן...",
-  "fetch": "הבא"
+  "fetch": "הבא",
+  "searching_sources": "מחפש בכל המקורות...",
+  "results_found": "תוצאות נמצאו",
+  "song_saved_ok": "השיר נשמר בהצלחה",
+  "added_to_playlist_ok": "השיר נוסף לפלייליסט",
+  "select_playlist": "בחר פלייליסט",
+  "create_playlist": "צור פלייליסט חדש",
+  "playlist_name": "שם הפלייליסט",
+  "create": "צור",
+  "cancel": "ביטול",
+  "edit": "ערוך",
+  "done": "סיים"
 }

@@ -20,5 +20,16 @@
   "search_hint": "Search for a song to see its chords",
   "fetch_from_web": "Can't find it? Fetch from web ›",
   "artist_placeholder": "Artist name...",
-  "fetch": "Fetch"
+  "fetch": "Fetch",
+  "searching_sources": "Searching all sources...",
+  "results_found": "results found",
+  "song_saved_ok": "Song saved successfully",
+  "added_to_playlist_ok": "Song added to playlist",
+  "select_playlist": "Select a playlist",
+  "create_playlist": "Create new playlist",
+  "playlist_name": "Playlist name",
+  "create": "Create",
+  "cancel": "Cancel",
+  "edit": "Edit",
+  "done": "Done"
 }
