@@ -1,0 +1,24 @@
+{
+  "name": "muzalkin-backend",
+  "version": "1.0.0",
+  "description": "MuZalkin backend API — chord routing and song management",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "axios": "^1.9.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
