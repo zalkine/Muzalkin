@@ -3,176 +3,94 @@
  *
  * Searches multiple chord sources for song titles matching a query.
  *
- * Hebrew songs  → Tab4U → Negina → Nagnu
+ * Hebrew songs  → Tab4U → Nagnu → Negina
  * English songs → Ultimate Guitar → Tab4U
+ *
+ * Tab4U and Ultimate Guitar are behind Cloudflare → delegated to the Python
+ * cloudscraper script at  scraper/search.py.
  *
  * Returns a list of { title, artist, source } — no full chord data,
  * just enough for the user to pick a song. Full chords are fetched
  * on demand via chord_router.js.
  */
 
-const axios  = require('axios');
-const cheerio = require('cheerio');
+const { spawn }  = require('child_process');
+const path       = require('path');
+const axios      = require('axios');
+const cheerio    = require('cheerio');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'User-Agent'     : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept'         : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'he,en-US;q=0.9,en;q=0.8',
 };
 
+// Path to the Python scraper (relative to this file: backend/services/ → scraper/)
+const SCRAPER_PY = path.resolve(__dirname, '../../scraper/search.py');
+
 // ---------------------------------------------------------------------------
-// Tab4U search (Hebrew + English)
-// URL: https://www.tab4u.com/resultsSimple?tab=songs&q=<query>
+// Helper: call  python3 scraper/search.py <source> "<query>"
+// Returns parsed JSON array or [] on failure.
+// ---------------------------------------------------------------------------
+
+function runPyScraper(source, query) {
+  return new Promise((resolve) => {
+    console.log(`[PyScraper:${source}] Starting for query: "${query}"`);
+    const proc   = spawn('python3', [SCRAPER_PY, source, query]);
+    let stdout   = '';
+    let stderr   = '';
+
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    proc.on('close', (code) => {
+      // Forward Python's progress logs to Node console
+      if (stderr) {
+        stderr.trim().split('\n').forEach((line) => console.log(`  ${line}`));
+      }
+      if (code !== 0) {
+        console.error(`[PyScraper:${source}] exited with code ${code}`);
+        return resolve([]);
+      }
+      try {
+        const results = JSON.parse(stdout.trim());
+        console.log(`[PyScraper:${source}] returned ${results.length} results`);
+        resolve(results);
+      } catch (e) {
+        console.error(`[PyScraper:${source}] JSON parse error:`, e.message);
+        console.error('stdout snippet:', stdout.slice(0, 200));
+        resolve([]);
+      }
+    });
+
+    proc.on('error', (err) => {
+      console.error(`[PyScraper:${source}] spawn error:`, err.message);
+      resolve([]);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tab4U search — via Python cloudscraper (Cloudflare-protected)
 // ---------------------------------------------------------------------------
 
 async function searchTab4U(query) {
-  try {
-    const q          = encodeURIComponent(query);
-    const PAGE_SIZE  = 30;
-    const MAX_PAGES  = 10; // safety cap — 10 × 30 = 300 results max
-
-    const allResults = [];
-    const seen       = new Set();
-
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const offset = page * PAGE_SIZE;
-      const url    = offset === 0
-        ? `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}`
-        : `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}&n=${PAGE_SIZE}&s=${offset}`;
-
-      if (page > 0) await sleep(1000); // polite delay between pages
-
-      console.log(`[SearchTab4U] Fetching page ${page + 1}: ${url}`);
-      const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
-      console.log(`[SearchTab4U] status=${res.status} bodyLen=${res.data.length}`);
-
-      const $        = cheerio.load(res.data);
-      let newOnPage  = 0;
-
-      // Tab4U link format: tabs/songs/ID_ARTIST_-_TITLE.html
-      // Link text format:  TITLE / ARTIST  (note: slash separator, title first)
-      $('a[href*="tabs/songs/"]').each((_, el) => {
-        const href = $(el).attr('href');
-        if (!href) return;
-
-        let title  = '';
-        let artist = '';
-
-        // Primary: decode title/artist from the URL filename (most reliable)
-        try {
-          const filename  = href.split('/').pop().replace('.html', '');
-          const withoutId = filename.replace(/^\d+_/, '');
-          // Decode percent-encoding first, then replace underscores with spaces.
-          // After decode: "ARTIST_-_TITLE" → "ARTIST - TITLE" once underscores
-          // are swapped.  Split on first " - " to get artist / title.
-          const decoded = decodeURIComponent(withoutId).replace(/_/g, ' ');
-          const sep     = decoded.indexOf(' - ');
-          if (sep !== -1) {
-            artist = decoded.slice(0, sep).trim();
-            title  = decoded.slice(sep + 3).trim();
-          } else {
-            title = decoded.trim();
-          }
-        } catch {
-          // URL parse failed — fall back to link text
-        }
-
-        // Fallback: link text is "TITLE / ARTIST"
-        if (!title) {
-          const text = $(el).text().replace(/\s+/g, ' ').trim();
-          if (text.includes(' / ')) {
-            const parts = text.split(' / ');
-            title  = parts[0].trim();
-            artist = parts.slice(1).join(' / ').trim();
-          } else {
-            title = text;
-          }
-        }
-
-        if (!title) return;
-
-        const key = `${title}|${artist}`.toLowerCase();
-        if (seen.has(key)) return;
-        seen.add(key);
-        newOnPage++;
-
-        allResults.push({ title, artist, source: 'tab4u' });
-      });
-
-      console.log(`[SearchTab4U] page ${page + 1}: ${newOnPage} new results (total so far: ${allResults.length})`);
-
-      // No new results on this page → we've passed the last page
-      if (newOnPage === 0) break;
-    }
-
-    console.log(`[SearchTab4U] finished — total=${allResults.length} results`);
-    return allResults;
-  } catch (err) {
-    console.error('[SearchTab4U] Error:', err.message);
-    return [];
-  }
+  return runPyScraper('tab4u', query);
 }
 
 // ---------------------------------------------------------------------------
-// Negina search (Hebrew)
-// URL: https://www.negina.co.il/?s=<query>
-// WordPress-based site
+// Ultimate Guitar search — via Python cloudscraper (Cloudflare-protected)
 // ---------------------------------------------------------------------------
 
-async function searchNegina(query) {
-  try {
-    const q   = encodeURIComponent(query);
-    const url = `https://www.negina.co.il/?s=${q}`;
-
-    await sleep(1000);
-    const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
-    console.log(`[SearchNegina] status=${res.status} bodyLen=${res.data.length}`);
-    const $   = cheerio.load(res.data);
-
-    const results = [];
-    const seen    = new Set();
-
-    // WordPress archive: each result is an article/li with a title link
-    $('article, .post, li.search-result').each((_, el) => {
-      const $el = $(el);
-
-      // Title from h1/h2/h3/h4 link inside the article
-      const titleEl = $el.find('h1 a, h2 a, h3 a, h4 a, .entry-title a').first();
-      let title     = titleEl.text().trim();
-
-      // Artist from meta or author span
-      let artist = $el.find('.artist, .entry-meta .author, .singer, span[class*="artist"]').first().text().trim();
-
-      // Fallback: split "Title - Artist" from title
-      if (!artist && title.includes(' - ')) {
-        const parts = title.split(' - ');
-        title  = parts[0].trim();
-        artist = parts[1].trim();
-      }
-
-      if (!title) return;
-
-      const key = `${title}|${artist}`.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-
-      results.push({ title, artist, source: 'negina' });
-    });
-
-    console.log(`[SearchNegina] found=${results.length} results`);
-    return results.slice(0, 8);
-  } catch (err) {
-    console.error('[SearchNegina] Error:', err.message);
-    return [];
-  }
+async function searchUltimateGuitar(query) {
+  return runPyScraper('ug', query);
 }
 
 // ---------------------------------------------------------------------------
-// Nagnu search (Hebrew)
+// Nagnu search (Hebrew) — WordPress, no Cloudflare
 // URL: https://nagnu.co.il/?s=<query>
-// WordPress-based site
 // ---------------------------------------------------------------------------
 
 async function searchNagnu(query) {
@@ -180,7 +98,7 @@ async function searchNagnu(query) {
     const q   = encodeURIComponent(query);
     const url = `https://nagnu.co.il/?s=${q}`;
 
-    await sleep(1000);
+    await sleep(500);
     const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
     console.log(`[SearchNagnu] status=${res.status} bodyLen=${res.data.length}`);
     const $   = cheerio.load(res.data);
@@ -188,7 +106,6 @@ async function searchNagnu(query) {
     const results = [];
     const seen    = new Set();
 
-    // WordPress archive — same as Negina
     $('article.post, article').each((_, el) => {
       const $el     = $(el);
       const titleEl = $el.find('h2.entry-title a, h1 a, h2 a').first();
@@ -211,7 +128,7 @@ async function searchNagnu(query) {
     });
 
     console.log(`[SearchNagnu] found=${results.length} results`);
-    return results.slice(0, 8);
+    return results;
   } catch (err) {
     console.error('[SearchNagnu] Error:', err.message);
     return [];
@@ -219,40 +136,48 @@ async function searchNagnu(query) {
 }
 
 // ---------------------------------------------------------------------------
-// Ultimate Guitar search (English)
+// Negina search (Hebrew) — WordPress, no Cloudflare
+// URL: https://www.negina.co.il/?s=<query>
 // ---------------------------------------------------------------------------
 
-async function searchUltimateGuitar(query) {
+async function searchNegina(query) {
   try {
     const q   = encodeURIComponent(query);
-    const url = `https://www.ultimate-guitar.com/search.php?title=${q}&type=Chords`;
+    const url = `https://www.negina.co.il/?s=${q}`;
 
-    await sleep(1000);
-    const res = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      timeout: 10000,
+    await sleep(500);
+    const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    console.log(`[SearchNegina] status=${res.status} bodyLen=${res.data.length}`);
+    const $   = cheerio.load(res.data);
+
+    const results = [];
+    const seen    = new Set();
+
+    $('article, .post, li.search-result').each((_, el) => {
+      const $el     = $(el);
+      const titleEl = $el.find('h1 a, h2 a, h3 a, h4 a, .entry-title a').first();
+      let title     = titleEl.text().trim();
+      let artist    = $el.find('.artist, .entry-meta .author, .singer, span[class*="artist"]').first().text().trim();
+
+      if (!artist && title.includes(' - ')) {
+        const parts = title.split(' - ');
+        title  = parts[0].trim();
+        artist = parts[1].trim();
+      }
+
+      if (!title) return;
+
+      const key = `${title}|${artist}`.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      results.push({ title, artist, source: 'negina' });
     });
 
-    const dataMatch = res.data.match(/class="js-store" data-content="([^"]+)"/);
-    if (!dataMatch) return [];
-
-    const rawJson = dataMatch[1].replace(/&quot;/g, '"');
-    const store   = JSON.parse(rawJson);
-    const items   = store?.store?.page?.data?.results ?? [];
-
-    return items
-      .filter((r) => r.type === 'Chords' && r.song_name)
-      .slice(0, 8)
-      .map((r) => ({
-        title:  r.song_name,
-        artist: r.artist_name ?? '',
-        source: 'ultimate_guitar',
-      }));
+    console.log(`[SearchNegina] found=${results.length} results`);
+    return results;
   } catch (err) {
-    console.error('[SearchUG] Error:', err.message);
+    console.error('[SearchNegina] Error:', err.message);
     return [];
   }
 }
@@ -275,11 +200,11 @@ async function searchSources(query, lang = 'he') {
       searchTab4U(query),
     ];
   } else {
-    // Hebrew: Tab4U first, then Negina, then Nagnu — all in parallel
+    // Hebrew: Tab4U first (most results), then Nagnu + Negina in parallel
     searches = [
       searchTab4U(query),
-      searchNegina(query),
       searchNagnu(query),
+      searchNegina(query),
     ];
   }
 
