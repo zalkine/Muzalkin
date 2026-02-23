@@ -16,7 +16,11 @@ const cheerio = require('cheerio');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 MuZalkin/1.0' };
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'he,en-US;q=0.9,en;q=0.8',
+};
 
 // ---------------------------------------------------------------------------
 // Tab4U search (Hebrew + English)
@@ -30,6 +34,7 @@ async function searchTab4U(query) {
 
     await sleep(1000);
     const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    console.log(`[SearchTab4U] status=${res.status} bodyLen=${res.data.length}`);
     const $   = cheerio.load(res.data);
 
     const results = [];
@@ -70,6 +75,7 @@ async function searchTab4U(query) {
       results.push({ title, artist, source: 'tab4u' });
     });
 
+    console.log(`[SearchTab4U] found=${results.length} results`);
     return results.slice(0, 8);
   } catch (err) {
     console.error('[SearchTab4U] Error:', err.message);
@@ -90,6 +96,7 @@ async function searchNegina(query) {
 
     await sleep(1000);
     const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    console.log(`[SearchNegina] status=${res.status} bodyLen=${res.data.length}`);
     const $   = cheerio.load(res.data);
 
     const results = [];
@@ -122,6 +129,7 @@ async function searchNegina(query) {
       results.push({ title, artist, source: 'negina' });
     });
 
+    console.log(`[SearchNegina] found=${results.length} results`);
     return results.slice(0, 8);
   } catch (err) {
     console.error('[SearchNegina] Error:', err.message);
@@ -142,6 +150,7 @@ async function searchNagnu(query) {
 
     await sleep(1000);
     const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+    console.log(`[SearchNagnu] status=${res.status} bodyLen=${res.data.length}`);
     const $   = cheerio.load(res.data);
 
     const results = [];
@@ -169,6 +178,7 @@ async function searchNagnu(query) {
       results.push({ title, artist, source: 'nagnu' });
     });
 
+    console.log(`[SearchNagnu] found=${results.length} results`);
     return results.slice(0, 8);
   } catch (err) {
     console.error('[SearchNagnu] Error:', err.message);
