@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   containerRTL: {
-    direction: 'rtl',
+    writingDirection: 'rtl',
   },
   logo: {
     fontSize: 64,
