@@ -29,68 +29,86 @@ const HEADERS = {
 
 async function searchTab4U(query) {
   try {
-    const q   = encodeURIComponent(query);
-    const url = `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}`;
+    const q          = encodeURIComponent(query);
+    const PAGE_SIZE  = 30;
+    const MAX_PAGES  = 10; // safety cap — 10 × 30 = 300 results max
 
-    await sleep(1000);
-    const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
-    console.log(`[SearchTab4U] status=${res.status} bodyLen=${res.data.length}`);
-    const $   = cheerio.load(res.data);
+    const allResults = [];
+    const seen       = new Set();
 
-    const results = [];
-    const seen    = new Set();
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const offset = page * PAGE_SIZE;
+      const url    = offset === 0
+        ? `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}`
+        : `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}&n=${PAGE_SIZE}&s=${offset}`;
 
-    // Tab4U results: relative links like tabs/songs/ID_ARTIST_-_TITLE.html
-    $('a[href*="tabs/songs/"]').each((_, el) => {
-      const href = $(el).attr('href');
-      if (!href) return;
+      if (page > 0) await sleep(1000); // polite delay between pages
 
-      // Try to read title from the link text or from a sibling td
-      const $row  = $(el).closest('tr');
-      let title   = $(el).text().trim();
-      let artist  = '';
+      console.log(`[SearchTab4U] Fetching page ${page + 1}: ${url}`);
+      const res = await axios.get(url, { headers: HEADERS, timeout: 8000 });
+      console.log(`[SearchTab4U] status=${res.status} bodyLen=${res.data.length}`);
 
-      if ($row.length) {
-        const cells = $row.find('td');
-        if (cells.length >= 2) {
-          title  = $(cells[0]).text().trim() || title;
-          artist = $(cells[1]).text().trim();
+      const $        = cheerio.load(res.data);
+      let newOnPage  = 0;
+
+      // Tab4U link format: tabs/songs/ID_ARTIST_-_TITLE.html
+      // Link text format:  TITLE / ARTIST  (note: slash separator, title first)
+      $('a[href*="tabs/songs/"]').each((_, el) => {
+        const href = $(el).attr('href');
+        if (!href) return;
+
+        let title  = '';
+        let artist = '';
+
+        // Primary: decode title/artist from the URL filename (most reliable)
+        try {
+          const filename  = href.split('/').pop().replace('.html', '');
+          const withoutId = filename.replace(/^\d+_/, '');
+          // Decode percent-encoding first, then replace underscores with spaces.
+          // After decode: "ARTIST_-_TITLE" → "ARTIST - TITLE" once underscores
+          // are swapped.  Split on first " - " to get artist / title.
+          const decoded = decodeURIComponent(withoutId).replace(/_/g, ' ');
+          const sep     = decoded.indexOf(' - ');
+          if (sep !== -1) {
+            artist = decoded.slice(0, sep).trim();
+            title  = decoded.slice(sep + 3).trim();
+          } else {
+            title = decoded.trim();
+          }
+        } catch {
+          // URL parse failed — fall back to link text
         }
-      }
 
-      // Fallback: decode title/artist from the URL filename
-      // URL format: tabs/songs/ID_ARTIST_-_TITLE.html
-      if (!title) {
-        const filename = href.split('/').pop()?.replace('.html', '') ?? '';
-        const withoutId = filename.replace(/^\d+_/, '');
-        const decoded = decodeURIComponent(withoutId);
-        if (decoded.includes('_-_')) {
-          const parts = decoded.split('_-_');
-          artist = parts[0].replace(/_/g, ' ').trim();
-          title  = parts.slice(1).join(' - ').replace(/_/g, ' ').trim();
-        } else {
-          title = decoded.replace(/_/g, ' ').trim();
+        // Fallback: link text is "TITLE / ARTIST"
+        if (!title) {
+          const text = $(el).text().replace(/\s+/g, ' ').trim();
+          if (text.includes(' / ')) {
+            const parts = text.split(' / ');
+            title  = parts[0].trim();
+            artist = parts.slice(1).join(' / ').trim();
+          } else {
+            title = text;
+          }
         }
-      }
 
-      // Last fallback: split "Artist - Title" from link text
-      if (!artist && title.includes(' - ')) {
-        const parts = title.split(' - ');
-        artist = parts[0].trim();
-        title  = parts.slice(1).join(' - ').trim();
-      }
+        if (!title) return;
 
-      if (!title) return;
+        const key = `${title}|${artist}`.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        newOnPage++;
 
-      const key = `${title}|${artist}`.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
+        allResults.push({ title, artist, source: 'tab4u' });
+      });
 
-      results.push({ title, artist, source: 'tab4u' });
-    });
+      console.log(`[SearchTab4U] page ${page + 1}: ${newOnPage} new results (total so far: ${allResults.length})`);
 
-    console.log(`[SearchTab4U] found=${results.length} results`);
-    return results.slice(0, 8);
+      // No new results on this page → we've passed the last page
+      if (newOnPage === 0) break;
+    }
+
+    console.log(`[SearchTab4U] finished — total=${allResults.length} results`);
+    return allResults;
   } catch (err) {
     console.error('[SearchTab4U] Error:', err.message);
     return [];
