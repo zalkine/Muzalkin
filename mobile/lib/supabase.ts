@@ -63,14 +63,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ---------------------------------------------------------------------------
 
 /**
- * Opens the Google OAuth flow in the system browser.
- * Uses PKCE: the callback screen (or this function on return) exchanges the
- * one-time code for a session via `exchangeCodeForSession`.
+ * Opens the Google OAuth flow.
+ *
+ * Web:    full-page browser redirect — Supabase navigates to Google, then back
+ *         to /auth/callback?code=…, where the callback screen exchanges the code.
+ *
+ * Native: opens the system browser via expo-web-browser and waits for the
+ *         deep-link redirect (muzalkin://auth/callback?code=…).
  */
 export async function signInWithGoogle(): Promise<void> {
-  // Deep-link that the browser will redirect back to after OAuth
   const redirectTo = Linking.createURL('auth/callback');
 
+  if (Platform.OS === 'web') {
+    // Let Supabase navigate the browser directly — no popup needed.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo },
+    });
+    if (error) throw error;
+    // Browser is navigating away; nothing more to do here.
+    return;
+  }
+
+  // Native: open system browser and wait for deep-link return.
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -82,7 +97,6 @@ export async function signInWithGoogle(): Promise<void> {
   if (error) throw error;
   if (!data.url) throw new Error('No OAuth URL returned from Supabase');
 
-  // Open the OAuth URL and wait for the redirect back to the app
   const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
 
   if (result.type === 'success') {
