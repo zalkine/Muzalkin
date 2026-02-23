@@ -4,17 +4,39 @@ import { createClient } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 /**
  * SecureStore adapter for Supabase session persistence.
- * Uses expo-secure-store so tokens are kept in the device keychain/keystore,
- * not in plain AsyncStorage.
+ * - Native (iOS/Android): expo-secure-store (device keychain/keystore)
+ * - Browser (web): localStorage
+ * - SSR / Node.js: in-memory map (no persistence needed during SSR)
  */
-const SecureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
+function makeStorageAdapter() {
+  if (Platform.OS !== 'web') {
+    return {
+      getItem: (key: string) => SecureStore.getItemAsync(key),
+      setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+      removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+    };
+  }
+  if (typeof localStorage !== 'undefined') {
+    return {
+      getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+      setItem: (key: string, value: string) => { localStorage.setItem(key, value); return Promise.resolve(); },
+      removeItem: (key: string) => { localStorage.removeItem(key); return Promise.resolve(); },
+    };
+  }
+  // SSR / Node.js — in-memory only, no persistence
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => Promise.resolve(store.get(key) ?? null),
+    setItem: (key: string, value: string) => { store.set(key, value); return Promise.resolve(); },
+    removeItem: (key: string) => { store.delete(key); return Promise.resolve(); },
+  };
+}
+
+const SecureStoreAdapter = makeStorageAdapter();
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
