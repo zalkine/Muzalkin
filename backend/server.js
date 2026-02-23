@@ -43,6 +43,14 @@ app.use('/search',  searchRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Expose public Supabase config to the browser (anon key is safe to publish)
+app.get('/config', (_req, res) => {
+  res.json({
+    supabaseUrl:     process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------

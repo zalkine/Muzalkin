@@ -6,6 +6,8 @@
   <title>MuZalkin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@400;700;800&display=swap" rel="stylesheet" />
+  <!-- Supabase JS (UMD build — exposes window.supabase) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -19,7 +21,12 @@
     }
 
     header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
 
     h1 {
@@ -30,6 +37,22 @@
     }
 
     h1 span { color: #e8e8f0; }
+
+    /* Auth bar (top-right of header) */
+    #auth-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.85rem;
+      color: #aaa;
+    }
+
+    #auth-bar .user-email {
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     .search-form {
       display: flex;
@@ -76,6 +99,18 @@
     button:hover  { background: #c4b5fd; }
     button:active { background: #8b5cf6; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    button.btn-outline {
+      background: transparent;
+      color: #a78bfa;
+      border: 1.5px solid #a78bfa;
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 8px;
+    }
+
+    button.btn-outline:hover { background: #a78bfa22; }
 
     #status {
       margin-top: 1.25rem;
@@ -162,12 +197,18 @@
       padding: 0.9rem 1.1rem;
       color: #f87171;
     }
+
+    #auth-loading {
+      font-size: 0.8rem;
+      color: #555570;
+    }
   </style>
 </head>
 <body>
 
 <header>
   <h1>🎸 Mu<span>Zalkin</span></h1>
+  <div id="auth-bar"><span id="auth-loading">טוען…</span></div>
 </header>
 
 <form class="search-form" id="searchForm">
@@ -180,12 +221,24 @@
 <div id="results"></div>
 
 <script>
-  const form       = document.getElementById('searchForm');
-  const titleInput = document.getElementById('titleInput');
-  const artistInput= document.getElementById('artistInput');
-  const searchBtn  = document.getElementById('searchBtn');
-  const statusEl   = document.getElementById('status');
-  const resultsEl  = document.getElementById('results');
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Chord search ───────────────────────────────────────────────────────────
+
+  const form        = document.getElementById('searchForm');
+  const titleInput  = document.getElementById('titleInput');
+  const artistInput = document.getElementById('artistInput');
+  const searchBtn   = document.getElementById('searchBtn');
+  const statusEl    = document.getElementById('status');
+  const resultsEl   = document.getElementById('results');
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -258,13 +311,76 @@
     resultsEl.style.display = 'block';
   }
 
-  function esc(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  // ── Supabase auth ──────────────────────────────────────────────────────────
+
+  let sb; // Supabase client, initialised after config fetch
+
+  async function initAuth() {
+    // 1. Fetch public config from backend
+    let cfg;
+    try {
+      cfg = await fetch('/config').then(r => r.json());
+    } catch {
+      document.getElementById('auth-bar').innerHTML =
+        '<span style="color:#f87171;font-size:0.8rem">שגיאה בטעינת הגדרות</span>';
+      return;
+    }
+
+    // 2. Create Supabase client (PKCE flow, localStorage for session)
+    sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+      auth: {
+        flowType: 'pkce',
+        storage: {
+          getItem:    k => Promise.resolve(localStorage.getItem(k)),
+          setItem:    (k, v) => { localStorage.setItem(k, v); return Promise.resolve(); },
+          removeItem: k => { localStorage.removeItem(k); return Promise.resolve(); },
+        },
+      },
+    });
+
+    // 3. If Supabase redirected back with ?code=, exchange it for a session
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (code) {
+      const { error } = await sb.auth.exchangeCodeForSession(code);
+      if (error) {
+        console.error('Code exchange failed:', error.message);
+      }
+      // Clean the URL so a page refresh doesn't try to reuse the code
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
+    // 4. Render current session
+    const { data: { session } } = await sb.auth.getSession();
+    renderAuthBar(session?.user ?? null);
+
+    // 5. Keep UI in sync on sign-in / sign-out
+    sb.auth.onAuthStateChange((_event, session) => {
+      renderAuthBar(session?.user ?? null);
+    });
   }
+
+  function renderAuthBar(user) {
+    const bar = document.getElementById('auth-bar');
+    if (user) {
+      bar.innerHTML = `
+        <span class="user-email">${esc(user.email)}</span>
+        <button class="btn-outline" id="logoutBtn">התנתק</button>
+      `;
+      document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await sb.auth.signOut();
+      });
+    } else {
+      bar.innerHTML = `<button class="btn-outline" id="loginBtn">התחבר עם Google</button>`;
+      document.getElementById('loginBtn').addEventListener('click', async () => {
+        await sb.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: window.location.origin },
+        });
+      });
+    }
+  }
+
+  initAuth();
 </script>
 </body>
 </html>
