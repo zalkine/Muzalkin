@@ -40,9 +40,8 @@ async function searchTab4U(query) {
     const results = [];
     const seen    = new Set();
 
-    // Tab4U results: each song link is <a href="/tabs/songs/...">
-    // Title and artist are in surrounding table cells
-    $('a[href*="/tabs/songs/"]').each((_, el) => {
+    // Tab4U results: relative links like tabs/songs/ID_ARTIST_-_TITLE.html
+    $('a[href*="tabs/songs/"]').each((_, el) => {
       const href = $(el).attr('href');
       if (!href) return;
 
@@ -59,11 +58,26 @@ async function searchTab4U(query) {
         }
       }
 
-      // Fallback: split "Title - Artist" pattern
+      // Fallback: decode title/artist from the URL filename
+      // URL format: tabs/songs/ID_ARTIST_-_TITLE.html
+      if (!title) {
+        const filename = href.split('/').pop()?.replace('.html', '') ?? '';
+        const withoutId = filename.replace(/^\d+_/, '');
+        const decoded = decodeURIComponent(withoutId);
+        if (decoded.includes('_-_')) {
+          const parts = decoded.split('_-_');
+          artist = parts[0].replace(/_/g, ' ').trim();
+          title  = parts.slice(1).join(' - ').replace(/_/g, ' ').trim();
+        } else {
+          title = decoded.replace(/_/g, ' ').trim();
+        }
+      }
+
+      // Last fallback: split "Artist - Title" from link text
       if (!artist && title.includes(' - ')) {
         const parts = title.split(' - ');
-        title  = parts[0].trim();
-        artist = parts[1].trim();
+        artist = parts[0].trim();
+        title  = parts.slice(1).join(' - ').trim();
       }
 
       if (!title) return;
