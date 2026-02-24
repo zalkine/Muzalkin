@@ -13,18 +13,15 @@ import { router } from 'expo-router';
 import { useLanguage, Language } from '../../hooks/useLanguage';
 import { signOut, supabase } from '../../lib/supabase';
 
-type Instrument = 'guitar' | 'piano';
+const PRIMARY = '#5B4FE8';
 
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
+type Instrument = 'guitar' | 'piano';
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { language, setLanguage, isRTL } = useLanguage();
   const [instrument, setInstrumentState] = useState<Instrument>('guitar');
 
-  // Load saved instrument preference from Supabase
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
@@ -41,9 +38,7 @@ export default function SettingsScreen() {
 
   const handleInstrument = useCallback(async (inst: Instrument) => {
     setInstrumentState(inst);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       await supabase.from('users').update({ instrument: inst }).eq('id', user.id);
     }
@@ -52,7 +47,6 @@ export default function SettingsScreen() {
   const handleLanguage = useCallback(
     async (lang: Language) => {
       await setLanguage(lang);
-      // RTL change requires restart — inform the user
       if ((lang === 'he') !== isRTL) {
         Alert.alert(t('language'), 'Restart the app to apply the layout change.');
       }
@@ -71,166 +65,188 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <Text style={[styles.screenTitle, isRTL && styles.textRTL]}>{t('settings')}</Text>
 
-      {/* ── Language ── */}
-      <Section label={t('language')} isRTL={isRTL}>
-        <SegmentRow
-          options={[
-            { key: 'he', label: 'עברית' },
-            { key: 'en', label: 'English' },
-          ]}
-          selected={language}
-          onSelect={(key) => handleLanguage(key as Language)}
-        />
-      </Section>
+      {/* ── Header ── */}
+      <View style={styles.header}>
+        <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>
+          {t('settings')}
+        </Text>
+      </View>
 
-      {/* ── Instrument ── */}
-      <Section label={t('instrument_guitar') + ' / ' + t('instrument_piano')} isRTL={isRTL}>
-        <SegmentRow
-          options={[
-            { key: 'guitar', label: `🎸 ${t('instrument_guitar')}` },
-            { key: 'piano',  label: `🎹 ${t('instrument_piano')}` },
-          ]}
-          selected={instrument}
-          onSelect={(key) => handleInstrument(key as Instrument)}
-        />
-      </Section>
+      {/* ── Settings body ── */}
+      <View style={styles.body}>
 
-      {/* ── Sign out ── */}
-      <View style={styles.signOutWrapper}>
-        <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-          <Text style={styles.signOutText}>Sign out</Text>
-        </TouchableOpacity>
+        {/* Language */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, isRTL && styles.textRTL]}>
+            {t('language')}
+          </Text>
+          <View style={styles.segmentRow}>
+            {(['he', 'en'] as Language[]).map((lang, i) => (
+              <TouchableOpacity
+                key={lang}
+                style={[
+                  styles.segmentBtn,
+                  language === lang && styles.segmentBtnActive,
+                  i === 0 && styles.segmentBtnFirst,
+                  i === 1 && styles.segmentBtnLast,
+                ]}
+                onPress={() => handleLanguage(lang)}
+              >
+                <Text style={[
+                  styles.segmentLabel,
+                  language === lang && styles.segmentLabelActive,
+                ]}>
+                  {lang === 'he' ? '🇮🇱  עברית' : '🇺🇸  English'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Instrument */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, isRTL && styles.textRTL]}>
+            {t('instrument_guitar')} / {t('instrument_piano')}
+          </Text>
+          <View style={styles.segmentRow}>
+            {(['guitar', 'piano'] as Instrument[]).map((inst, i) => (
+              <TouchableOpacity
+                key={inst}
+                style={[
+                  styles.segmentBtn,
+                  instrument === inst && styles.segmentBtnActive,
+                  i === 0 && styles.segmentBtnFirst,
+                  i === 1 && styles.segmentBtnLast,
+                ]}
+                onPress={() => handleInstrument(inst)}
+              >
+                <Text style={[
+                  styles.segmentLabel,
+                  instrument === inst && styles.segmentLabelActive,
+                ]}>
+                  {inst === 'guitar'
+                    ? `🎸  ${t('instrument_guitar')}`
+                    : `🎹  ${t('instrument_piano')}`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Sign out */}
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.8}>
+            <Text style={styles.signOutText}>🚪  {t('settings')}</Text>
+          </TouchableOpacity>
+        </View>
+
       </View>
     </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function Section({
-  label,
-  children,
-  isRTL,
-}: {
-  label: string;
-  children: React.ReactNode;
-  isRTL: boolean;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionLabel, isRTL && styles.textRTL]}>{label}</Text>
-      {children}
-    </View>
-  );
-}
-
-function SegmentRow({
-  options,
-  selected,
-  onSelect,
-}: {
-  options: { key: string; label: string }[];
-  selected: string;
-  onSelect: (key: string) => void;
-}) {
-  return (
-    <View style={styles.segmentRow}>
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.key}
-          style={[styles.segmentBtn, selected === opt.key && styles.segmentBtnActive]}
-          onPress={() => onSelect(opt.key)}
-        >
-          <Text
-            style={[
-              styles.segmentLabel,
-              selected === opt.key && styles.segmentLabelActive,
-            ]}
-          >
-            {opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </View>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F4F3FF',
   },
-  screenTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+
+  header: {
+    backgroundColor: PRIMARY,
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 8,
-    color: '#111',
+    paddingTop: 16,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+
+  body: {
+    flex: 1,
+    paddingTop: 24,
+    gap: 8,
+  },
+
+  section: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    gap: 10,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: 4,
   },
   textRTL: {
     writingDirection: 'rtl',
     textAlign: 'right',
   },
-  section: {
-    marginHorizontal: 20,
-    marginTop: 24,
-    gap: 10,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
+
   segmentRow: {
     flexDirection: 'row',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   segmentBtn: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 14,
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFFFF',
+  },
+  segmentBtnFirst: {
+    borderRightWidth: 0.5,
+    borderRightColor: '#E5E7EB',
+  },
+  segmentBtnLast: {
+    borderLeftWidth: 0.5,
+    borderLeftColor: '#E5E7EB',
   },
   segmentBtnActive: {
-    backgroundColor: '#4285F4',
+    backgroundColor: PRIMARY,
   },
   segmentLabel: {
     fontSize: 14,
-    color: '#444',
+    color: '#374151',
     fontWeight: '500',
   },
   segmentLabelActive: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
-  signOutWrapper: {
-    position: 'absolute',
-    bottom: 40,
-    left: 20,
-    right: 20,
-  },
+
   signOutBtn: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   signOutText: {
-    color: '#cc3333',
+    color: '#EF4444',
     fontSize: 15,
     fontWeight: '600',
   },

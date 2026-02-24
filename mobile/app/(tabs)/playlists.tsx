@@ -17,9 +17,7 @@ import { router } from 'expo-router';
 
 import { supabase } from '../../lib/supabase';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const PRIMARY = '#5B4FE8';
 
 type Playlist = {
   id: string;
@@ -29,10 +27,6 @@ type Playlist = {
   created_at: string;
   song_count?: number;
 };
-
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
 
 export default function PlaylistsScreen() {
   const { t } = useTranslation();
@@ -46,9 +40,7 @@ export default function PlaylistsScreen() {
   const [newDesc, setNewDesc] = useState('');
 
   const fetchPlaylists = useCallback(async () => {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     const { data, error } = await supabase
@@ -58,7 +50,6 @@ export default function PlaylistsScreen() {
       .order('created_at', { ascending: false });
 
     if (!error && data) {
-      // Attach song counts via playlist_songs
       const withCounts = await Promise.all(
         data.map(async (pl) => {
           const { count } = await supabase
@@ -73,20 +64,14 @@ export default function PlaylistsScreen() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    fetchPlaylists();
-  }, [fetchPlaylists]);
+  useEffect(() => { fetchPlaylists(); }, [fetchPlaylists]);
 
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     setCreating(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setCreating(false);
-      return;
-    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setCreating(false); return; }
+
     const { error } = await supabase.from('playlists').insert({
       user_id: user.id,
       name: newName.trim(),
@@ -121,12 +106,14 @@ export default function PlaylistsScreen() {
     [fetchPlaylists],
   );
 
-  // ── Render: loading ──
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>{t('playlists')}</Text>
+        </View>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#4285F4" />
+          <ActivityIndicator size="large" color={PRIMARY} />
         </View>
       </SafeAreaView>
     );
@@ -134,45 +121,48 @@ export default function PlaylistsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Title row */}
-      <View style={[styles.titleRow, isRTL && styles.titleRowRTL]}>
-        <Text style={[styles.screenTitle, isRTL && styles.textRTL]}>
-          {t('playlists')}
-        </Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => setModalVisible(true)}
-        >
-          <Text style={styles.addBtnText}>+</Text>
-        </TouchableOpacity>
+
+      {/* ── Header ── */}
+      <View style={styles.header}>
+        <View style={[styles.headerRow, isRTL && styles.headerRowRTL]}>
+          <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>
+            {t('playlists')}
+          </Text>
+          <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Empty state */}
-      {playlists.length === 0 && (
+      {/* ── Empty state ── */}
+      {playlists.length === 0 ? (
         <View style={styles.center}>
+          <Text style={styles.emptyEmoji}>🎶</Text>
           <Text style={[styles.emptyText, isRTL && styles.textRTL]}>
             {t('no_results')}
           </Text>
+          <TouchableOpacity style={styles.createFirstBtn} onPress={() => setModalVisible(true)}>
+            <Text style={styles.createFirstText}>+ {t('playlists')}</Text>
+          </TouchableOpacity>
         </View>
+      ) : (
+        <FlatList
+          data={playlists}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item }) => (
+            <PlaylistRow
+              playlist={item}
+              isRTL={isRTL}
+              onPress={() => router.push(`/playlist/${item.id}`)}
+              onDelete={() => handleDelete(item.id, item.name)}
+            />
+          )}
+        />
       )}
 
-      {/* Playlist list */}
-      <FlatList
-        data={playlists}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        renderItem={({ item }) => (
-          <PlaylistRow
-            playlist={item}
-            isRTL={isRTL}
-            onPress={() => router.push(`/playlist/${item.id}`)}
-            onDelete={() => handleDelete(item.id, item.name)}
-          />
-        )}
-      />
-
-      {/* Create playlist modal */}
+      {/* ── Create modal ── */}
       <Modal
         visible={modalVisible}
         transparent
@@ -182,7 +172,7 @@ export default function PlaylistsScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={[styles.modalTitle, isRTL && styles.textRTL]}>
-              {t('playlists')}
+              פלייליסט חדש
             </Text>
             <TextInput
               style={[styles.input, isRTL && styles.inputRTL]}
@@ -202,22 +192,18 @@ export default function PlaylistsScreen() {
               textAlign={isRTL ? 'right' : 'left'}
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>✕</Text>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>ביטול</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.createBtn, !newName.trim() && styles.createBtnDisabled]}
+                style={[styles.confirmBtn, !newName.trim() && styles.confirmBtnDisabled]}
                 onPress={handleCreate}
                 disabled={!newName.trim() || creating}
               >
-                {creating ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.createBtnText}>✓</Text>
-                )}
+                {creating
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.confirmBtnText}>צור</Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
@@ -226,10 +212,6 @@ export default function PlaylistsScreen() {
     </SafeAreaView>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Sub-component
-// ---------------------------------------------------------------------------
 
 function PlaylistRow({
   playlist,
@@ -244,25 +226,25 @@ function PlaylistRow({
 }) {
   return (
     <TouchableOpacity
-      style={[styles.row, isRTL && styles.rowRTL]}
+      style={[styles.card, isRTL && styles.cardRTL]}
       onPress={onPress}
       onLongPress={onDelete}
       activeOpacity={0.7}
     >
-      <View style={styles.rowIcon}>
-        <Text style={styles.rowIconText}>🎵</Text>
+      <View style={styles.cardIcon}>
+        <Text style={styles.cardIconText}>🎵</Text>
       </View>
-      <View style={styles.rowText}>
-        <Text style={[styles.rowName, isRTL && styles.textRTL]} numberOfLines={1}>
+      <View style={[styles.cardText, isRTL && styles.cardTextRTL]}>
+        <Text style={[styles.cardName, isRTL && styles.textRTL]} numberOfLines={1}>
           {playlist.name}
         </Text>
         {playlist.description ? (
-          <Text style={[styles.rowDesc, isRTL && styles.textRTL]} numberOfLines={1}>
+          <Text style={[styles.cardDesc, isRTL && styles.textRTL]} numberOfLines={1}>
             {playlist.description}
           </Text>
         ) : null}
-        <Text style={[styles.rowMeta, isRTL && styles.textRTL]}>
-          {playlist.song_count} songs{playlist.is_public ? ' · public' : ''}
+        <Text style={[styles.cardMeta, isRTL && styles.textRTL]}>
+          {playlist.song_count} שירים{playlist.is_public ? ' · ציבורי' : ''}
         </Text>
       </View>
       <Text style={styles.chevron}>{isRTL ? '‹' : '›'}</Text>
@@ -270,110 +252,143 @@ function PlaylistRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Styles
-// ---------------------------------------------------------------------------
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { fontSize: 15, color: '#888', textAlign: 'center' },
+  safe: { flex: 1, backgroundColor: '#F4F3FF' },
 
-  titleRow: {
+  header: {
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: PRIMARY,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 8,
   },
-  titleRowRTL: { flexDirection: 'row-reverse' },
-  screenTitle: { fontSize: 22, fontWeight: '700', color: '#111' },
+  headerRowRTL: { flexDirection: 'row-reverse' },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
   textRTL: { writingDirection: 'rtl', textAlign: 'right' },
 
   addBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#4285F4',
+    backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addBtnText: { color: '#fff', fontSize: 24, lineHeight: 28 },
+  addBtnText: { color: '#fff', fontSize: 24, lineHeight: 30, fontWeight: '300' },
 
-  list: { paddingVertical: 4 },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 16,
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 32,
   },
+  emptyEmoji: { fontSize: 48 },
+  emptyText: { fontSize: 15, color: '#6B7280', textAlign: 'center' },
+  createFirstBtn: {
+    marginTop: 8,
+    backgroundColor: PRIMARY,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  createFirstText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
-  row: {
+  list: { padding: 16, gap: 8 },
+  separator: { height: 0 },
+
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  rowRTL: { flexDirection: 'row-reverse' },
-  rowIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f4ff',
+  cardRTL: { flexDirection: 'row-reverse' },
+  cardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F4F3FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 8,
   },
-  rowIconText: { fontSize: 20 },
-  rowText: { flex: 1, gap: 2 },
-  rowName: { fontSize: 15, fontWeight: '600', color: '#111' },
-  rowDesc: { fontSize: 13, color: '#666' },
-  rowMeta: { fontSize: 12, color: '#aaa' },
-  chevron: { fontSize: 20, color: '#bbb', marginHorizontal: 4 },
+  cardIconText: { fontSize: 22 },
+  cardText: { flex: 1, gap: 2 },
+  cardTextRTL: { alignItems: 'flex-end' },
+  cardName: { fontSize: 15, fontWeight: '700', color: '#1A1A2E' },
+  cardDesc: { fontSize: 13, color: '#6B7280' },
+  cardMeta: { fontSize: 12, color: '#9CA3AF' },
+  chevron: { fontSize: 20, color: '#D1D5DB' },
 
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    gap: 12,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 28,
+    gap: 14,
   },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111', marginBottom: 4 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1A1A2E', marginBottom: 4 },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#F9FAFB',
+    color: '#1A1A2E',
   },
-  inputDesc: { minHeight: 60, textAlignVertical: 'top' },
+  inputDesc: { minHeight: 64, textAlignVertical: 'top' },
   inputRTL: { writingDirection: 'rtl' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 4 },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 4,
+  },
   cancelBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
   },
-  cancelBtnText: { fontSize: 18, color: '#666' },
-  createBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#4285F4',
-    alignItems: 'center',
-    justifyContent: 'center',
+  cancelBtnText: { fontSize: 15, color: '#374151', fontWeight: '600' },
+  confirmBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: PRIMARY,
   },
-  createBtnDisabled: { backgroundColor: '#aaa' },
-  createBtnText: { fontSize: 18, color: '#fff' },
+  confirmBtnDisabled: { opacity: 0.5 },
+  confirmBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
 });
