@@ -1,42 +1,56 @@
 import 'react-native-url-polyfill/auto';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
-import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
 /**
- * SecureStore adapter for Supabase session persistence.
- * - Native (iOS/Android): expo-secure-store (device keychain/keystore)
- * - Browser (web): localStorage
- * - SSR / Node.js: in-memory map (no persistence needed during SSR)
+ * Storage adapter for Supabase session persistence.
+ *
+ * We use AsyncStorage instead of SecureStore because:
+ * - SecureStore has a 2 KB value size limit on Android that can silently
+ *   truncate or fail to store Supabase JWT tokens (which are large).
+ * - AsyncStorage works reliably across all Expo Go environments.
+ *
+ * For web we fall back to localStorage; for SSR/Node we use an in-memory map.
  */
 function makeStorageAdapter() {
   if (Platform.OS !== 'web') {
     return {
-      getItem: (key: string) => SecureStore.getItemAsync(key),
-      setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-      removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+      getItem: (key: string) => AsyncStorage.getItem(key),
+      setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
+      removeItem: (key: string) => AsyncStorage.removeItem(key),
     };
   }
   if (typeof localStorage !== 'undefined') {
     return {
       getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
-      setItem: (key: string, value: string) => { localStorage.setItem(key, value); return Promise.resolve(); },
-      removeItem: (key: string) => { localStorage.removeItem(key); return Promise.resolve(); },
+      setItem: (key: string, value: string) => {
+        localStorage.setItem(key, value);
+        return Promise.resolve();
+      },
+      removeItem: (key: string) => {
+        localStorage.removeItem(key);
+        return Promise.resolve();
+      },
     };
   }
   // SSR / Node.js — in-memory only, no persistence
   const store = new Map<string, string>();
   return {
     getItem: (key: string) => Promise.resolve(store.get(key) ?? null),
-    setItem: (key: string, value: string) => { store.set(key, value); return Promise.resolve(); },
-    removeItem: (key: string) => { store.delete(key); return Promise.resolve(); },
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+      return Promise.resolve();
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+      return Promise.resolve();
+    },
   };
 }
-
-const SecureStoreAdapter = makeStorageAdapter();
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
@@ -44,13 +58,13 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
     'Missing Supabase environment variables. ' +
-      'Ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in your .env file.'
+      'Ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in your .env file.',
   );
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: SecureStoreAdapter,
+    storage: makeStorageAdapter(),
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false, // required for React Native — no URL-based OAuth redirects
@@ -78,22 +92,19 @@ export async function signInWithGoogle(): Promise<void> {
   const redirectTo = Linking.createURL('auth/callback');
 
   if (Platform.OS === 'web') {
-    // Let Supabase navigate the browser directly — no popup needed.
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },
     });
     if (error) throw error;
-    // Browser is navigating away; nothing more to do here.
     return;
   }
 
-  // Native: open system browser and wait for deep-link return.
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo,
-      skipBrowserRedirect: true, // we open the browser manually below
+      skipBrowserRedirect: true,
     },
   });
 
