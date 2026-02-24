@@ -108,7 +108,7 @@ async function searchTab4u(query: string): Promise<SearchResult[]> {
 
     const html = await res.text();
 
-    const hrefRe = /href="(tabs\/songs\/[^"]+\.html)"/gi;
+    const hrefRe = /href="\/(tabs\/songs\/[^"]+\.html)"/gi;
     const results: SearchResult[] = [];
     const seen   = new Set<string>();
     let m: RegExpExecArray | null;

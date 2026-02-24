@@ -1,7 +1,7 @@
 import { Tabs, router } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
 const PRIMARY = '#5B4FE8';
@@ -14,22 +14,33 @@ function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
 
 export default function TabLayout() {
   const { t } = useTranslation();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         router.replace('/auth/login');
+        // keep ready=false so we never flash the tabs for unauthenticated users
+      } else {
+        setReady(true);
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
+        setReady(false);
         router.replace('/auth/login');
+      } else {
+        setReady(true);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  if (!ready) {
+    return <View style={{ flex: 1, backgroundColor: '#F4F3FF' }} />;
+  }
 
   return (
     <Tabs
