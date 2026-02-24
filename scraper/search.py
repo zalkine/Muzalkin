@@ -112,9 +112,10 @@ def _parse_tab4u_href(href: str) -> tuple[str, str]:
         filename  = href.rstrip("/").rsplit("/", 1)[-1].replace(".html", "")
         without_id = re.sub(r"^\d+_", "", filename)
         decoded    = without_id.replace("_", " ")  # underscores are spaces
-        # URL-percent-decode (handle %D7%A9 etc.)
+        # URL-percent-decode (handle %D7%A9 etc.) then HTML-entity decode
         from urllib.parse import unquote
-        decoded = unquote(decoded)
+        from html import unescape
+        decoded = unescape(unquote(decoded))
         if " - " in decoded:
             sep    = decoded.index(" - ")
             artist = decoded[:sep].strip()
