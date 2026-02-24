@@ -55,6 +55,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: false, // required for React Native — no URL-based OAuth redirects
     flowType: 'pkce',          // PKCE is the secure flow for mobile OAuth
+    // React Native has no Navigator.locks API — provide a simple pass-through lock
+    // so Supabase doesn't time out trying to acquire a lock that will never resolve.
+    lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
   },
 });
 
