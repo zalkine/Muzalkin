@@ -20,8 +20,10 @@ import { supabase } from '../../lib/supabase';
 // Config
 // ---------------------------------------------------------------------------
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 const PRIMARY = '#5B4FE8';
+
+const USER_AGENT =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +35,7 @@ type SearchResult = {
   artist: string;
   source: string;
   from_db: boolean;
+  url?: string;
 };
 
 type Status = 'idle' | 'loading' | 'done' | 'error';
@@ -54,66 +57,179 @@ function sourceBadge(source: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Data fetching
+// HTML parser helpers (no DOM in RN — use regex)
+// ---------------------------------------------------------------------------
+
+function decodeHref(href: string): string {
+  try {
+    return decodeURIComponent(href)
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Parse artist + title from Tab4U slug:
+ *   tabs/songs/12345_ARTIST_-_TITLE.html
+ */
+function parseTab4uHref(href: string): { title: string; artist: string } {
+  try {
+    const filename  = href.replace(/^.*\//, '').replace(/\.html$/, '');
+    const withoutId = filename.replace(/^\d+_/, '');
+    const decoded   = decodeHref(withoutId.replace(/_/g, ' '));
+    const sep = decoded.indexOf(' - ');
+    if (sep !== -1) {
+      return { artist: decoded.slice(0, sep).trim(), title: decoded.slice(sep + 3).trim() };
+    }
+    return { title: decoded.trim(), artist: '' };
+  } catch {
+    return { title: '', artist: '' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab4U search  (called directly — React Native has no CORS)
+// ---------------------------------------------------------------------------
+
+async function searchTab4u(query: string): Promise<SearchResult[]> {
+  try {
+    const q   = encodeURIComponent(query);
+    const url = `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}`;
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+    });
+    if (!res.ok) return [];
+
+    const html = await res.text();
+
+    const hrefRe = /href="(tabs\/songs\/[^"]+\.html)"/gi;
+    const results: SearchResult[] = [];
+    const seen   = new Set<string>();
+    let m: RegExpExecArray | null;
+
+    while ((m = hrefRe.exec(html)) !== null) {
+      const href = m[1];
+      const { title, artist } = parseTab4uHref(href);
+      if (!title) continue;
+      const key = `${title}|${artist}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({
+        title,
+        artist,
+        source:  'tab4u',
+        from_db: false,
+        url:     `https://www.tab4u.com/${href}`,
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nagnu search  (WordPress, no Cloudflare)
+// ---------------------------------------------------------------------------
+
+async function searchNagnu(query: string): Promise<SearchResult[]> {
+  try {
+    const q   = encodeURIComponent(query);
+    const url = `https://nagnu.co.il/?s=${q}`;
+
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+    });
+    if (!res.ok) return [];
+
+    const html = await res.text();
+
+    const titleRe = /class="entry-title"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/gi;
+    const results: SearchResult[] = [];
+    const seen   = new Set<string>();
+    let m: RegExpExecArray | null;
+
+    while ((m = titleRe.exec(html)) !== null) {
+      let title  = m[1].trim();
+      let artist = '';
+
+      if (title.includes(' - ')) {
+        const [a, t] = title.split(' - ', 2);
+        title  = t.trim();
+        artist = a.trim();
+      }
+
+      if (!title) continue;
+      const key = `${title}|${artist}`.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({ title, artist, source: 'nagnu', from_db: false });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Saved songs from Supabase
 // ---------------------------------------------------------------------------
 
 async function searchSavedSongs(query: string): Promise<SearchResult[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data } = await supabase
-    .from('songs')
-    .select('id, title, artist')
-    .eq('user_id', user.id)
-    .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
-    .limit(10);
-
-  return (data ?? []).map((s) => ({
-    id: s.id,
-    title: s.title,
-    artist: s.artist,
-    source: 'saved',
-    from_db: true,
-  }));
-}
-
-async function searchWeb(query: string, lang: string): Promise<SearchResult[]> {
   try {
-    const params = new URLSearchParams({ q: query, lang });
-    const res = await fetch(`${API_URL}/search?${params.toString()}`);
-    if (!res.ok) return [];
-    const items: Array<{ title: string; artist: string; source: string }> =
-      await res.json();
-    return items.map((item) => ({
-      title:   item.title,
-      artist:  item.artist,
-      source:  item.source,
-      from_db: false,
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
+
+    const { data } = await supabase
+      .from('songs')
+      .select('id, title, artist')
+      .eq('user_id', user.id)
+      .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
+      .limit(10);
+
+    return (data ?? []).map((s) => ({
+      id:      s.id,
+      title:   s.title,
+      artist:  s.artist,
+      source:  'saved',
+      from_db: true,
     }));
   } catch {
     return [];
   }
 }
 
-async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
+// ---------------------------------------------------------------------------
+// Combined search
+// ---------------------------------------------------------------------------
+
+async function searchAll(query: string, _lang: string): Promise<SearchResult[]> {
   const q = query.trim();
   if (!q) return [];
 
-  const [saved, web] = await Promise.all([
+  const settled = await Promise.allSettled([
     searchSavedSongs(q),
-    searchWeb(q, lang),
+    searchTab4u(q),
+    searchNagnu(q),
   ]);
 
-  const seen = new Set<string>();
+  const seen    = new Set<string>();
   const results: SearchResult[] = [];
 
-  for (const item of saved) {
-    const key = `${item.title}|${item.artist}`.toLowerCase();
-    if (!seen.has(key)) { seen.add(key); results.push(item); }
-  }
-  for (const item of web) {
-    const key = `${item.title}|${item.artist}`.toLowerCase();
-    if (!seen.has(key)) { seen.add(key); results.push(item); }
+  for (const s of settled) {
+    if (s.status !== 'fulfilled') continue;
+    for (const item of s.value) {
+      const key = `${item.title}|${item.artist}`.toLowerCase();
+      if (!seen.has(key)) { seen.add(key); results.push(item); }
+    }
   }
 
   return results;
