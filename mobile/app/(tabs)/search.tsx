@@ -48,7 +48,6 @@ const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
   saved:           { label: 'שמור',   color: '#10B981' },
   tab4u:           { label: 'Tab4U',  color: '#F59E0B' },
   negina:          { label: 'Negina', color: '#8B5CF6' },
-  nagnu:           { label: 'נגנו',   color: '#06B6D4' },
   ultimate_guitar: { label: 'UG',     color: '#EF4444' },
 };
 
@@ -136,41 +135,42 @@ async function searchTab4u(query: string): Promise<SearchResult[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Nagnu search  (WordPress, no Cloudflare)
+// Negina search  (JSON API — /songs/search?query=...&limit=N)
+// Response: [{ id, slug, name, artist, type }]
+// Song URL:  https://negina.co.il/chords/{artistSlug}/{songSlug}
 // ---------------------------------------------------------------------------
 
-async function searchNagnu(query: string): Promise<SearchResult[]> {
+async function searchNegina(query: string): Promise<SearchResult[]> {
   try {
     const q   = encodeURIComponent(query);
-    const url = `https://nagnu.co.il/?s=${q}`;
+    const url = `https://negina.co.il/songs/search?query=${q}&limit=20`;
 
     const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
     });
     if (!res.ok) return [];
 
-    const html = await res.text();
+    const data: Array<{ id: number; slug: string; name: string; artist: string; type: string }> =
+      await res.json();
 
-    const titleRe = /class="entry-title"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/gi;
     const results: SearchResult[] = [];
     const seen   = new Set<string>();
-    let m: RegExpExecArray | null;
 
-    while ((m = titleRe.exec(html)) !== null) {
-      let title  = m[1].trim();
-      let artist = '';
-
-      if (title.includes(' - ')) {
-        const [a, t] = title.split(' - ', 2);
-        title  = t.trim();
-        artist = a.trim();
-      }
-
-      if (!title) continue;
-      const key = `${title}|${artist}`.toLowerCase();
+    for (const item of data) {
+      if (item.type !== 'song' || !item.name) continue;
+      const title  = item.name.trim();
+      // artist field uses hyphens as spaces ("מירי-אלוני" → "מירי אלוני")
+      const artist = item.artist.replace(/-/g, ' ').trim();
+      const key    = `${title}|${artist}`.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      results.push({ title, artist, source: 'nagnu', from_db: false });
+      results.push({
+        title,
+        artist,
+        source:  'negina',
+        from_db: false,
+        url:     `https://negina.co.il/chords/${encodeURIComponent(item.artist)}/${encodeURIComponent(item.slug)}`,
+      });
     }
 
     return results;
@@ -218,7 +218,7 @@ async function searchAll(query: string, _lang: string): Promise<SearchResult[]> 
   const settled = await Promise.allSettled([
     searchSavedSongs(q),
     searchTab4u(q),
-    searchNagnu(q),
+    searchNegina(q),
   ]);
 
   const seen    = new Set<string>();
