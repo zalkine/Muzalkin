@@ -22,7 +22,7 @@ import cloudscraper
 from bs4 import BeautifulSoup
 
 PAGE_SIZE = 30
-MAX_PAGES = 10   # safety cap — 10 × 30 = 300 results
+MAX_PAGES = 1   # one page (30 results) is enough for search suggestions
 
 
 def make_scraper():
