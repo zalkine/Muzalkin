@@ -103,9 +103,11 @@ async function searchTab4u(query: string): Promise<SearchResult[]> {
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT },
     });
+    console.log('[tab4u] status:', res.status);
     if (!res.ok) return [];
 
     const html = await res.text();
+    console.log('[tab4u] html length:', html.length, 'cloudflare?', html.includes('Just a moment'));
 
     const hrefRe = /href="\/(tabs\/songs\/[^"]+\.html)"/gi;
     const results: SearchResult[] = [];
@@ -128,8 +130,10 @@ async function searchTab4u(query: string): Promise<SearchResult[]> {
       });
     }
 
+    console.log('[tab4u] results:', results.length);
     return results;
-  } catch {
+  } catch (e) {
+    console.error('[tab4u] error:', e);
     return [];
   }
 }
@@ -148,10 +152,12 @@ async function searchNegina(query: string): Promise<SearchResult[]> {
     const res = await fetch(url, {
       headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
     });
+    console.log('[negina] status:', res.status);
     if (!res.ok) return [];
 
     const data: Array<{ id: number; slug: string; name: string; artist: string; type: string }> =
       await res.json();
+    console.log('[negina] items:', data.length);
 
     const results: SearchResult[] = [];
     const seen   = new Set<string>();
@@ -173,8 +179,10 @@ async function searchNegina(query: string): Promise<SearchResult[]> {
       });
     }
 
+    console.log('[negina] results:', results.length);
     return results;
-  } catch {
+  } catch (e) {
+    console.error('[negina] error:', e);
     return [];
   }
 }
