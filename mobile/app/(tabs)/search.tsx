@@ -22,8 +22,7 @@ import { supabase } from '../../lib/supabase';
 
 const PRIMARY = '#5B4FE8';
 
-const USER_AGENT =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,117 +55,37 @@ function sourceBadge(source: string) {
 }
 
 // ---------------------------------------------------------------------------
-// HTML parser helpers (no DOM in RN — use regex)
-// ---------------------------------------------------------------------------
-
-function decodeHref(href: string): string {
-  try {
-    return decodeURIComponent(href)
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
-  } catch {
-    return href;
-  }
-}
-
-/**
- * Parse artist + title from Tab4U slug:
- *   tabs/songs/12345_ARTIST_-_TITLE.html
- */
-function parseTab4uHref(href: string): { title: string; artist: string } {
-  try {
-    const filename  = href.replace(/^.*\//, '').replace(/\.html$/, '');
-    const withoutId = filename.replace(/^\d+_/, '');
-    const decoded   = decodeHref(withoutId.replace(/_/g, ' '));
-    const sep = decoded.indexOf(' - ');
-    if (sep !== -1) {
-      return { artist: decoded.slice(0, sep).trim(), title: decoded.slice(sep + 3).trim() };
-    }
-    return { title: decoded.trim(), artist: '' };
-  } catch {
-    return { title: '', artist: '' };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Tab4U search  (called directly — React Native has no CORS)
-// ---------------------------------------------------------------------------
-
-async function searchTab4u(query: string): Promise<SearchResult[]> {
-  try {
-    const q   = encodeURIComponent(query);
-    const url = `https://www.tab4u.com/resultsSimple?tab=songs&q=${q}`;
-
-    const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-    });
-    console.log('[tab4u] status:', res.status);
-    if (!res.ok) return [];
-
-    const html = await res.text();
-    console.log('[tab4u] html length:', html.length, 'cloudflare?', html.includes('Just a moment'));
-
-    const hrefRe = /href="\/(tabs\/songs\/[^"]+\.html)"/gi;
-    const results: SearchResult[] = [];
-    const seen   = new Set<string>();
-    let m: RegExpExecArray | null;
-
-    while ((m = hrefRe.exec(html)) !== null) {
-      const href = m[1];
-      const { title, artist } = parseTab4uHref(href);
-      if (!title) continue;
-      const key = `${title}|${artist}`.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      results.push({
-        title,
-        artist,
-        source:  'tab4u',
-        from_db: false,
-        url:     `https://www.tab4u.com/${href}`,
-      });
-    }
-
-    console.log('[tab4u] results:', results.length);
-    return results;
-  } catch (e) {
-    console.error('[tab4u] error:', e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Negina search  (JSON API — /songs/search?query=...&limit=N)
+// Negina search — JSON API, no Cloudflare, works from any HTTP client
+// GET https://negina.co.il/songs/search?query=...&limit=N
 // Response: [{ id, slug, name, artist, type }]
-// Song URL:  https://negina.co.il/chords/{artistSlug}/{songSlug}
 // ---------------------------------------------------------------------------
 
 async function searchNegina(query: string): Promise<SearchResult[]> {
   try {
     const q   = encodeURIComponent(query);
-    const url = `https://negina.co.il/songs/search?query=${q}&limit=20`;
+    const url = `https://negina.co.il/songs/search?query=${q}&limit=30`;
+    console.log('[negina] fetching:', url);
 
     const res = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/json' },
+      headers: {
+        'Accept':          'application/json',
+        'Accept-Language': 'he-IL,he;q=0.9,en;q=0.8',
+      },
     });
     console.log('[negina] status:', res.status);
     if (!res.ok) return [];
 
     const data: Array<{ id: number; slug: string; name: string; artist: string; type: string }> =
       await res.json();
-    console.log('[negina] items:', data.length);
+    console.log('[negina] raw items:', data.length);
 
     const results: SearchResult[] = [];
     const seen   = new Set<string>();
 
     for (const item of data) {
-      if (item.type !== 'song' || !item.name) continue;
+      if (!item.name) continue;
       const title  = item.name.trim();
-      // artist field uses hyphens as spaces ("מירי-אלוני" → "מירי אלוני")
-      const artist = item.artist.replace(/-/g, ' ').trim();
+      const artist = (item.artist ?? '').replace(/-/g, ' ').trim();
       const key    = `${title}|${artist}`.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -183,6 +102,46 @@ async function searchNegina(query: string): Promise<SearchResult[]> {
     return results;
   } catch (e) {
     console.error('[negina] error:', e);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backend search — proxies Tab4U (Cloudflare bypass via Python cloudscraper)
+// Only called when API_URL is configured and reachable.
+// ---------------------------------------------------------------------------
+
+async function searchBackend(query: string, lang: string): Promise<SearchResult[]> {
+  if (!API_URL) return [];
+  try {
+    const q   = encodeURIComponent(query);
+    const url = `${API_URL}/search?q=${q}&lang=${lang}`;
+    console.log('[backend] fetching:', url);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    console.log('[backend] status:', res.status);
+    if (!res.ok) return [];
+
+    const data: Array<{ title: string; artist: string; source: string; url?: string }> =
+      await res.json();
+    console.log('[backend] results:', data.length);
+
+    return data
+      .filter((item) => item.source !== 'negina') // avoid duplicates with direct Negina call
+      .map((item) => ({
+        title:   item.title,
+        artist:  item.artist ?? '',
+        source:  item.source,
+        from_db: false,
+        url:     item.url,
+      }));
+  } catch (e) {
+    console.error('[backend] error (non-fatal):', e);
     return [];
   }
 }
@@ -219,14 +178,14 @@ async function searchSavedSongs(query: string): Promise<SearchResult[]> {
 // Combined search
 // ---------------------------------------------------------------------------
 
-async function searchAll(query: string, _lang: string): Promise<SearchResult[]> {
+async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
   const q = query.trim();
   if (!q) return [];
 
   const settled = await Promise.allSettled([
     searchSavedSongs(q),
-    searchTab4u(q),
     searchNegina(q),
+    searchBackend(q, lang),   // optional: Tab4U via backend proxy (no-op if API_URL unset)
   ]);
 
   const seen    = new Set<string>();
