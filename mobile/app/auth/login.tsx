@@ -1,38 +1,53 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
 
-import { signInWithGoogle } from '../../lib/supabase';
+import { createAnonUser } from '../../lib/supabase';
 
 const PRIMARY = '#5B4FE8';
 
-export default function LoginScreen() {
+export default function WelcomeScreen() {
   const { t } = useTranslation();
+  const [name, setName]       = useState('');
   const [loading, setLoading] = useState(false);
+  const inputRef              = useRef<TextInput>(null);
 
-  async function handleGoogleSignIn() {
+  async function handleGetStarted() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      inputRef.current?.focus();
+      return;
+    }
     try {
       setLoading(true);
-      await signInWithGoogle();
+      await createAnonUser(trimmed);
       router.replace('/(tabs)/search');
     } catch (e) {
-      Alert.alert('Sign-in failed', (e as Error).message);
+      Alert.alert(t('error_fetch'), (e as Error).message);
     } finally {
       setLoading(false);
     }
   }
 
+  const canSubmit = name.trim().length > 0 && !loading;
+
   return (
-    <View style={styles.container}>
-      {/* Hero section */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      {/* ── Hero ── */}
       <View style={styles.hero}>
         <View style={styles.logoRing}>
           <Text style={styles.logoEmoji}>🎸</Text>
@@ -41,27 +56,43 @@ export default function LoginScreen() {
         <Text style={styles.tagline}>אקורדים לכל שיר</Text>
       </View>
 
-      {/* Bottom card */}
+      {/* ── Card ── */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>{t('sign_in')}</Text>
+        <Text style={styles.cardTitle}>{t('welcome_title')}</Text>
+        <Text style={styles.cardSubtitle}>{t('welcome_subtitle')}</Text>
+
+        <View style={styles.inputWrapper}>
+          <TextInput
+            ref={inputRef}
+            style={styles.input}
+            placeholder={t('name_placeholder')}
+            placeholderTextColor="#9CA3AF"
+            value={name}
+            onChangeText={setName}
+            onSubmitEditing={handleGetStarted}
+            returnKeyType="go"
+            autoCapitalize="words"
+            autoCorrect={false}
+            autoFocus
+            maxLength={40}
+            textAlign="right"
+          />
+        </View>
+
         <TouchableOpacity
-          style={[styles.googleBtn, loading && styles.googleBtnDisabled]}
-          onPress={handleGoogleSignIn}
-          disabled={loading}
+          style={[styles.startBtn, !canSubmit && styles.startBtnDisabled]}
+          onPress={handleGetStarted}
+          disabled={!canSubmit}
           activeOpacity={0.85}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
-              <Text style={styles.googleBtnIcon}>G</Text>
-              <Text style={styles.googleBtnText}>{t('sign_in_google')}</Text>
-            </>
+            <Text style={styles.startBtnText}>{t('get_started')} →</Text>
           )}
         </TouchableOpacity>
-        <Text style={styles.legal}>בכניסה אתה מסכים לתנאי השימוש</Text>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -109,7 +140,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingTop: 36,
     paddingBottom: 52,
-    gap: 16,
+    gap: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
@@ -121,38 +152,46 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1A1A2E',
     textAlign: 'center',
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
     marginBottom: 4,
   },
-  googleBtn: {
+  inputWrapper: {
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    overflow: 'hidden',
+  },
+  input: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 17,
+    color: '#1A1A2E',
+    writingDirection: 'rtl',
+  },
+  startBtn: {
     backgroundColor: PRIMARY,
     borderRadius: 14,
     paddingVertical: 16,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
     shadowColor: PRIMARY,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
+    marginTop: 4,
   },
-  googleBtnDisabled: {
-    opacity: 0.65,
+  startBtnDisabled: {
+    opacity: 0.45,
   },
-  googleBtnIcon: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  googleBtnText: {
+  startBtnText: {
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
-  },
-  legal: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    textAlign: 'center',
   },
 });

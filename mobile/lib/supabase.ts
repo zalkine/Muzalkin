@@ -2,8 +2,6 @@ import 'react-native-url-polyfill/auto';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 
 /**
@@ -68,8 +66,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: makeStorageAdapter(),
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false, // required for React Native — no URL-based OAuth redirects
-    flowType: 'pkce',          // PKCE is the secure flow for mobile OAuth
+    detectSessionInUrl: false,
     // React Native has no Navigator.locks API — provide a simple pass-through lock
     // so Supabase doesn't time out trying to acquire a lock that will never resolve.
     lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<unknown>) => fn(),
@@ -81,47 +78,56 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ---------------------------------------------------------------------------
 
 /**
- * Opens the Google OAuth flow.
+ * Creates a new anonymous user with the given display name.
  *
- * Web:    full-page browser redirect — Supabase navigates to Google, then back
- *         to /auth/callback?code=…, where the callback screen exchanges the code.
+ * Uses Supabase anonymous auth — no email, password, or OAuth required.
+ * The session is persisted to AsyncStorage just like a regular session,
+ * so the user stays logged in across app restarts.
  *
- * Native: opens the system browser via expo-web-browser and waits for the
- *         deep-link redirect (muzalkin://auth/callback?code=…).
+ * Prerequisites (one-time Supabase setup):
+ *   1. Enable Anonymous sign-ins: Dashboard → Authentication → Sign In Methods
+ *   2. Make email nullable: ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
  */
-export async function signInWithGoogle(): Promise<void> {
-  const redirectTo = Linking.createURL('auth/callback');
-
-  if (Platform.OS === 'web') {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo },
-    });
-    if (error) throw error;
-    return;
-  }
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true,
-    },
-  });
-
+export async function createAnonUser(displayName: string): Promise<void> {
+  const { data: { user }, error } = await supabase.auth.signInAnonymously();
   if (error) throw error;
-  if (!data.url) throw new Error('No OAuth URL returned from Supabase');
+  if (!user) throw new Error('No user returned from anonymous sign-in');
 
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  const { error: dbError } = await supabase.from('users').upsert({
+    id:           user.id,
+    display_name: displayName.trim(),
+    language:     'he',
+  });
+  if (dbError) throw dbError;
+}
 
-  if (result.type === 'success') {
-    const callbackUrl = new URL(result.url);
-    const code = callbackUrl.searchParams.get('code');
-    if (code) {
-      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-      if (sessionError) throw sessionError;
-    }
-  }
+/**
+ * Updates the display name of the currently authenticated user.
+ */
+export async function updateDisplayName(displayName: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('users')
+    .update({ display_name: displayName.trim() })
+    .eq('id', user.id);
+  if (error) throw error;
+}
+
+/**
+ * Returns the display name of the currently authenticated user, or null.
+ */
+export async function getDisplayName(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', user.id)
+    .single();
+  return data?.display_name ?? null;
 }
 
 /** Signs the current user out and clears the persisted session. */
