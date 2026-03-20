@@ -22,7 +22,7 @@ const router = express.Router();
 // ---------------------------------------------------------------------------
 
 router.get('/', async (req, res) => {
-  const { title, artist, lang } = req.query;
+  const { title, artist, lang, url, source } = req.query;
 
   if (!title) {
     return res.status(400).json({ error: 'title query param is required' });
@@ -35,6 +35,8 @@ router.get('/', async (req, res) => {
       String(title).trim(),
       artist ? String(artist).trim() : '',
       language,
+      url    ? String(url).trim()    : null,
+      source ? String(source).trim() : null,
     );
 
     if (!result) {

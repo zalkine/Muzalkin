@@ -176,7 +176,13 @@ async function searchSavedSongs(query: string): Promise<SearchResult[]> {
 
 // ---------------------------------------------------------------------------
 // Combined search
+// Results order: saved → Tab4U (via backend) → Negina
+// Tab4U results come with source URLs and are preferred because their chord
+// pages can be fetched directly. Negina results are de-duped against Tab4U.
 // ---------------------------------------------------------------------------
+
+// Source priority for display ordering (lower index = shown first)
+const SOURCE_ORDER: Record<string, number> = { saved: 0, tab4u: 1, negina: 2, ultimate_guitar: 3 };
 
 async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
   const q = query.trim();
@@ -185,17 +191,35 @@ async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
   const settled = await Promise.allSettled([
     searchSavedSongs(q),
     searchNegina(q),
-    searchBackend(q, lang),   // optional: Tab4U via backend proxy (no-op if API_URL unset)
+    searchBackend(q, lang),   // Tab4U + any other sources via backend proxy
   ]);
 
-  const seen    = new Set<string>();
-  const results: SearchResult[] = [];
+  // Collect all results — Tab4U first, then Negina (deduped by title+artist)
+  const bySource: Record<string, SearchResult[]> = {};
 
   for (const s of settled) {
     if (s.status !== 'fulfilled') continue;
     for (const item of s.value) {
+      if (!bySource[item.source]) bySource[item.source] = [];
+      bySource[item.source].push(item);
+    }
+  }
+
+  const seen    = new Set<string>();
+  const results: SearchResult[] = [];
+
+  // Sort source keys by priority, then deduplicate
+  const orderedSources = Object.keys(bySource).sort(
+    (a, b) => (SOURCE_ORDER[a] ?? 99) - (SOURCE_ORDER[b] ?? 99),
+  );
+
+  for (const src of orderedSources) {
+    for (const item of bySource[src]) {
       const key = `${item.title}|${item.artist}`.toLowerCase();
-      if (!seen.has(key)) { seen.add(key); results.push(item); }
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(item);
+      }
     }
   }
 
@@ -233,9 +257,14 @@ export default function SearchScreen() {
     if (item.from_db && item.id) {
       router.push(`/song/${item.id}`);
     } else {
-      router.push(
-        `/song/new?title=${encodeURIComponent(item.title)}&artist=${encodeURIComponent(item.artist ?? '')}&lang=${lang}`,
-      );
+      const params = new URLSearchParams({
+        title:  item.title,
+        artist: item.artist ?? '',
+        lang,
+        source: item.source,
+        ...(item.url ? { url: item.url } : {}),
+      });
+      router.push(`/song/new?${params.toString()}`);
     }
   }, [lang]);
 

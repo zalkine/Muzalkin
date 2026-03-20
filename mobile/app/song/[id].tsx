@@ -50,24 +50,32 @@ async function loadSong(
   title?: string,
   artist?: string,
   lang?: string,
+  sourceUrl?: string,
+  source?: string,
 ): Promise<SongData | null> {
-  // New song: fetch from backend (chord_router scrapes + caches automatically)
+  // New song: fetch from backend passing the direct URL from search results
   if (id === 'new') {
-    if (!title || !artist) return null;
+    if (!title) return null;
     try {
-      const params = new URLSearchParams({ title, artist, lang: lang ?? 'he' });
+      const params = new URLSearchParams({
+        title,
+        artist: artist ?? '',
+        lang:   lang ?? 'he',
+        ...(sourceUrl ? { url: sourceUrl }     : {}),
+        ...(source    ? { source }             : {}),
+      });
       const res = await fetch(`${API_URL}/chords?${params.toString()}`);
       if (!res.ok) return null;
       const data = await res.json();
       return {
         id: 'new',
         title,
-        artist,
-        instrument: 'guitar',
-        language: lang ?? 'he',
-        transpose: 0,
+        artist:      artist ?? '',
+        instrument:  'guitar',
+        language:    lang ?? 'he',
+        transpose:   0,
         chords_data: data.chords_data,
-        source_url: data.raw_url,
+        source_url:  data.raw_url,
       };
     } catch {
       return null;
@@ -201,15 +209,19 @@ async function createPlaylist(name: string): Promise<Playlist> {
 // Screen
 // ---------------------------------------------------------------------------
 
+// Scroll step per tick (pixels at 50ms interval):  1=slow … 5=fast
+const SPEED_LABELS = ['', '🐢', '🐌', '🚶', '🏃', '🚀'];
+
 export default function SongScreen() {
-  const { id, title, artist, lang } = useLocalSearchParams<{
+  const { id, title, artist, lang, url: sourceUrl, source } = useLocalSearchParams<{
     id: string;
     title?: string;
     artist?: string;
     lang?: string;
+    url?: string;
+    source?: string;
   }>();
   const { t } = useTranslation();
-  const isRTL = I18nManager.isRTL;
 
   const scrollRef        = useRef<ScrollView>(null);
   const autoScrollTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -218,7 +230,11 @@ export default function SongScreen() {
   const [loading,     setLoading]     = useState(true);
   const [semitones,   setSemitones]   = useState(0);
   const [autoScroll,  setAutoScroll]  = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(2);           // 1–5
   const [saving,      setSaving]      = useState(false);
+
+  // RTL follows the song's language once loaded, falls back to device setting
+  const [isRTL, setIsRTL] = useState(I18nManager.isRTL);
 
   // Edit mode
   const [editMode,    setEditMode]    = useState(false);
@@ -234,24 +250,26 @@ export default function SongScreen() {
   // Load song on mount
   useEffect(() => {
     if (!id) return;
-    loadSong(id, title, artist, lang)
+    loadSong(id, title, artist, lang, sourceUrl, source)
       .then((data) => {
         setSong(data);
         if (data) {
           setSemitones(data.transpose ?? 0);
           setEditedLines(data.chords_data);
+          setIsRTL(data.language === 'he');
         }
       })
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Auto-scroll logic
+  // Auto-scroll logic — step size scales with scrollSpeed (1=slow … 5=fast)
   useEffect(() => {
     if (autoScroll) {
+      const step = scrollSpeed;           // pixels per 50 ms tick
       autoScrollTimer.current = setInterval(() => {
         scrollRef.current?.scrollTo({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          y: (scrollRef.current as any)?._contentOffset?.y + 1 ?? 0,
+          y: ((scrollRef.current as any)?._contentOffset?.y ?? 0) + step,
           animated: false,
         });
       }, 50);
@@ -264,7 +282,7 @@ export default function SongScreen() {
     return () => {
       if (autoScrollTimer.current) clearInterval(autoScrollTimer.current);
     };
-  }, [autoScroll]);
+  }, [autoScroll, scrollSpeed]);
 
   const handleTranspose = useCallback((delta: number) => {
     setSemitones((prev) => Math.max(-6, Math.min(6, prev + delta)));
@@ -471,15 +489,36 @@ export default function SongScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Auto-scroll */}
-        <TouchableOpacity
-          style={[styles.autoScrollBtn, autoScroll && styles.autoScrollBtnActive]}
-          onPress={() => setAutoScroll((v) => !v)}
-        >
-          <Text style={[styles.autoScrollText, autoScroll && styles.autoScrollTextActive]}>
-            {t('auto_scroll')}
-          </Text>
-        </TouchableOpacity>
+        {/* Auto-scroll + speed controls */}
+        <View style={styles.autoScrollGroup}>
+          <TouchableOpacity
+            style={[styles.autoScrollBtn, autoScroll && styles.autoScrollBtnActive]}
+            onPress={() => setAutoScroll((v) => !v)}
+          >
+            <Text style={[styles.autoScrollText, autoScroll && styles.autoScrollTextActive]}>
+              {t('auto_scroll')}
+            </Text>
+          </TouchableOpacity>
+          {autoScroll && (
+            <View style={styles.speedRow}>
+              <TouchableOpacity
+                style={[styles.speedBtn, scrollSpeed <= 1 && styles.transposeBtnDisabled]}
+                onPress={() => setScrollSpeed((v) => Math.max(1, v - 1))}
+                disabled={scrollSpeed <= 1}
+              >
+                <Text style={styles.transposeBtnText}>−</Text>
+              </TouchableOpacity>
+              <Text style={styles.speedLabel}>{SPEED_LABELS[scrollSpeed]}</Text>
+              <TouchableOpacity
+                style={[styles.speedBtn, scrollSpeed >= 5 && styles.transposeBtnDisabled]}
+                onPress={() => setScrollSpeed((v) => Math.min(5, v + 1))}
+                disabled={scrollSpeed >= 5}
+              >
+                <Text style={styles.transposeBtnText}>+</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* ── Chord display OR Edit mode ── */}
@@ -753,6 +792,29 @@ const styles = StyleSheet.create({
   },
   autoScrollTextActive: {
     color: '#fff',
+  },
+  autoScrollGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  speedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  speedBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#e8eeff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speedLabel: {
+    fontSize: 16,
+    minWidth: 22,
+    textAlign: 'center',
   },
 
   // Edit mode
