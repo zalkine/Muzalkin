@@ -155,7 +155,7 @@ export default function PlaylistsScreen() {
             <PlaylistRow
               playlist={item}
               isRTL={isRTL}
-              onPress={() => router.push(`/playlist/${item.id}`)}
+              onPress={() => router.push(`/playlist/${item.id}` as never)}
               onDelete={() => handleDelete(item.id, item.name)}
             />
           )}

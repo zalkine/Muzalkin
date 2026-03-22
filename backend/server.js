@@ -14,6 +14,13 @@
 
 require('dotenv').config();
 
+// Configure Node.js native fetch to use the environment proxy (HTTPS_PROXY)
+// This is needed because Node 18+ fetch doesn't read proxy env vars automatically.
+if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+  const { ProxyAgent, setGlobalDispatcher } = require('undici');
+  setGlobalDispatcher(new ProxyAgent(process.env.HTTPS_PROXY || process.env.https_proxy));
+}
+
 const path    = require('path');
 const express = require('express');
 const cors    = require('cors');

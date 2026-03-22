@@ -526,7 +526,7 @@ export default function SongScreen() {
         <ScrollView style={styles.editScroll} contentContainerStyle={styles.editContent}>
           {editedLines.map((line, i) => (
             <View key={i} style={styles.editRow}>
-              <View style={[styles.editTypeBadge, styles[`editType_${line.type}` as keyof typeof styles] ?? styles.editType_lyrics]}>
+              <View style={[styles.editTypeBadge, (styles[`editType_${line.type}` as keyof typeof styles] ?? styles.editType_lyrics) as object]}>
                 <Text style={styles.editTypeText}>
                   {line.type === 'chords' ? '♩' : line.type === 'section' ? '§' : '♪'}
                 </Text>
