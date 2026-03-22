@@ -1,0 +1,10 @@
+mobile/
+web/
+.git/
+.env
+.env.*
+backend/node_modules/
+backend/.env
+**/__pycache__/
+**/*.pyc
+*.md
