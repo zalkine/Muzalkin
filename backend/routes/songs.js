@@ -22,7 +22,7 @@ const router = express.Router();
 // but here we use the anon key + user JWT to respect RLS policies).
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY,
+  process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY,
 );
 
 // ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ async function requireAuth(req, res, next) {
 
   req.user = data.user;
   // Attach a user-scoped client so Supabase RLS applies correctly
-  req.db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  req.db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   next();
