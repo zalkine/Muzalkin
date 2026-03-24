@@ -22,10 +22,16 @@ const path      = require('path');
 
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-);
+let _supabase = null;
+function getSupabase() {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_KEY,
+    );
+  }
+  return _supabase;
+}
 
 const FETCH_CHORDS_PY = path.resolve(__dirname, '../../scraper/fetch_chords.py');
 const SEARCH_PY       = path.resolve(__dirname, '../../scraper/search.py');
@@ -165,7 +171,7 @@ function parseUGContent(raw) {
 // ---------------------------------------------------------------------------
 
 async function getCached(title, artist, lang) {
-  const { data } = await supabase
+  const { data } = await getSupabase()
     .from('cached_chords')
     .select('chords_data, raw_url, source')
     .ilike('song_title', title)
@@ -179,7 +185,7 @@ async function getCached(title, artist, lang) {
 
 async function persistCache(title, artist, lang, source, chordsData, rawUrl) {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await supabase.from('cached_chords').upsert({
+  await getSupabase().from('cached_chords').upsert({
     song_title:  title,
     artist,
     language:    lang,
