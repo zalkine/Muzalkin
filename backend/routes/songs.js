@@ -1,127 +1,183 @@
+'use strict';
+
 /**
- * routes/songs.js
- *
- * REST API for the `songs` table.
- *
- * All routes require a valid Supabase JWT in the Authorization header.
- * The user_id is extracted from the verified JWT — never trusted from the client.
- *
- * Endpoints:
- *   GET    /songs          — list authenticated user's saved songs
- *   GET    /songs/:id      — get a single song by UUID
- *   POST   /songs          — save / upsert a song
- *   DELETE /songs/:id      — delete a song
+ * /api/songs — save and retrieve user songs.
+ * The caller must pass the user's Supabase JWT in Authorization: Bearer <token>.
  */
 
-const express = require('express');
+const { Router }       = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
-const router = express.Router();
+const router = Router();
 
-// Server-side Supabase client (service role bypasses RLS for admin ops,
-// but here we use the anon key + user JWT to respect RLS policies).
-const supabase = createClient(
+const supabaseAnon = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY,
+  process.env.SUPABASE_ANON_KEY,
+);
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
 );
 
 // ---------------------------------------------------------------------------
-// Auth middleware — extracts and verifies the Supabase JWT
+// Auth middleware
 // ---------------------------------------------------------------------------
 
 async function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization ?? '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token) return res.status(401).json({ error: 'Missing token' });
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) return res.status(401).json({ error: 'Invalid token' });
+  const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Invalid token' });
 
-  req.user = data.user;
-  // Attach a user-scoped client so Supabase RLS applies correctly
-  req.db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
+  req.user = user;
   next();
 }
 
 // ---------------------------------------------------------------------------
-// GET /songs — list current user's songs
-// ---------------------------------------------------------------------------
-
-router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await req.db
-    .from('songs')
-    .select('id, title, artist, instrument, language, transpose, created_at')
-    .eq('user_id', req.user.id)
-    .order('created_at', { ascending: false });
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-// ---------------------------------------------------------------------------
-// GET /songs/:id — single song
-// ---------------------------------------------------------------------------
-
-router.get('/:id', requireAuth, async (req, res) => {
-  const { data, error } = await req.db
-    .from('songs')
-    .select('*')
-    .eq('id', req.params.id)
-    .eq('user_id', req.user.id)
-    .single();
-
-  if (error) return res.status(404).json({ error: 'Song not found' });
-  res.json(data);
-});
-
-// ---------------------------------------------------------------------------
-// POST /songs — save (upsert) a song
+// POST /api/songs  — save a song from cached_chords to the user's library
+// Body: { cached_chord_id: string, instrument?: 'guitar'|'piano' }
 // ---------------------------------------------------------------------------
 
 router.post('/', requireAuth, async (req, res) => {
-  const { title, artist, language, chords_data, source_url, instrument, transpose } = req.body;
+  const { cached_chord_id, instrument = 'guitar' } = req.body;
 
-  if (!title || !artist) {
-    return res.status(400).json({ error: 'title and artist are required' });
+  if (!cached_chord_id) {
+    return res.status(400).json({ error: 'Missing cached_chord_id' });
   }
 
-  const { data, error } = await req.db
+  const { data: cached, error: cacheErr } = await supabaseAdmin
+    .from('cached_chords')
+    .select('*')
+    .eq('id', cached_chord_id)
+    .single();
+
+  if (cacheErr || !cached) {
+    return res.status(404).json({ error: 'Cached chord not found' });
+  }
+
+  const { data: song, error: insertErr } = await supabaseAdmin
     .from('songs')
-    .upsert(
-      {
-        user_id:    req.user.id,
-        title:      title.trim(),
-        artist:     artist.trim(),
-        language:   language ?? 'he',
-        chords_data: chords_data ?? null,
-        source_url:  source_url ?? null,
-        instrument:  instrument ?? 'guitar',
-        transpose:   typeof transpose === 'number' ? transpose : 0,
-      },
-      { onConflict: 'user_id,title,artist' },
-    )
+    .insert({
+      user_id:     req.user.id,
+      title:       cached.song_title,
+      artist:      cached.artist,
+      language:    cached.language,
+      chords_data: cached.chords_data,
+      source_url:  cached.raw_url,
+      instrument,
+      transpose:   0,
+    })
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.status(201).json(data);
+  if (insertErr) {
+    console.error('Song insert error:', insertErr.message);
+    return res.status(500).json({ error: 'Failed to save song' });
+  }
+
+  res.status(201).json(song);
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /songs/:id
+// GET /api/songs
+// ---------------------------------------------------------------------------
+
+router.get('/', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('songs')
+    .select('id, title, artist, language, instrument, transpose, created_at')
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: 'Failed to fetch songs' });
+
+  res.json(data || []);
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/songs/:id
 // ---------------------------------------------------------------------------
 
 router.delete('/:id', requireAuth, async (req, res) => {
-  const { error } = await req.db
+  const { error } = await supabaseAdmin
     .from('songs')
     .delete()
     .eq('id', req.params.id)
     .eq('user_id', req.user.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: 'Failed to delete song' });
+
   res.status(204).send();
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/songs/:id/transpose  — update semitone shift for a saved song
+// Body: { transpose: number }
+// ---------------------------------------------------------------------------
+
+router.patch('/:id/transpose', requireAuth, async (req, res) => {
+  const { transpose } = req.body;
+
+  if (typeof transpose !== 'number' || transpose < -11 || transpose > 11) {
+    return res.status(400).json({ error: 'transpose must be an integer between -11 and 11' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('songs')
+    .update({ transpose })
+    .eq('id', req.params.id)
+    .eq('user_id', req.user.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: 'Failed to update transpose' });
+  if (!data) return res.status(404).json({ error: 'Song not found' });
+
+  res.json(data);
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /api/users/preferences  — update language and/or instrument preference
+// Body: { language?: 'he'|'en', instrument?: 'guitar'|'piano' }
+// ---------------------------------------------------------------------------
+
+router.patch('/preferences', requireAuth, async (req, res) => {
+  const { language, instrument } = req.body;
+  const updates = {};
+
+  if (language !== undefined) {
+    if (!['he', 'en'].includes(language)) {
+      return res.status(400).json({ error: "language must be 'he' or 'en'" });
+    }
+    updates.language = language;
+  }
+
+  if (instrument !== undefined) {
+    if (!['guitar', 'piano'].includes(instrument)) {
+      return res.status(400).json({ error: "instrument must be 'guitar' or 'piano'" });
+    }
+    updates.instrument = instrument;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .update(updates)
+    .eq('id', req.user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Preferences update error:', error.message);
+    return res.status(500).json({ error: 'Failed to update preferences' });
+  }
+
+  res.json(data);
 });
 
 module.exports = router;

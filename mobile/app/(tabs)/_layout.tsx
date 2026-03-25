@@ -1,90 +1,52 @@
-import { Tabs, router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Tabs } from 'expo-router';
+import { I18nManager } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Text, View } from 'react-native';
-import { supabase } from '../../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
 
-const PRIMARY = '#5B4FE8';
+type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
-function TabIcon({ icon, focused }: { icon: string; focused: boolean }) {
-  return (
-    <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>{icon}</Text>
-  );
+function TabIcon({ name, focused }: { name: IoniconsName; focused: boolean }) {
+  return <Ionicons name={name} size={24} color={focused ? '#4285F4' : '#888'} />;
 }
 
 export default function TabLayout() {
   const { t } = useTranslation();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        router.replace('/auth/login');
-        // keep ready=false so we never flash the tabs for unauthenticated users
-      } else {
-        setReady(true);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        setReady(false);
-        router.replace('/auth/login');
-      } else {
-        setReady(true);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (!ready) {
-    return <View style={{ flex: 1, backgroundColor: '#F4F3FF' }} />;
-  }
+  const isRTL = I18nManager.isRTL;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: PRIMARY,
-        tabBarInactiveTintColor: '#9CA3AF',
-        tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 0,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.06,
-          shadowRadius: 8,
-          elevation: 12,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 4,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-        },
+        tabBarActiveTintColor: '#4285F4',
+        tabBarInactiveTintColor: '#888',
+        tabBarStyle: { direction: isRTL ? 'rtl' : 'ltr' },
       }}
     >
       <Tabs.Screen
         name="search"
         options={{
           title: t('search'),
-          tabBarIcon: ({ focused }) => <TabIcon icon="🔍" focused={focused} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name={focused ? 'search' : 'search-outline'} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="playlists"
         options={{
           title: t('playlists'),
-          tabBarIcon: ({ focused }) => <TabIcon icon="🎵" focused={focused} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name={focused ? 'musical-notes' : 'musical-notes-outline'} focused={focused} />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: t('settings'),
-          tabBarIcon: ({ focused }) => <TabIcon icon="⚙️" focused={focused} />,
+          tabBarIcon: ({ focused }) => (
+            <TabIcon name={focused ? 'settings' : 'settings-outline'} focused={focused} />
+          ),
         }}
       />
     </Tabs>

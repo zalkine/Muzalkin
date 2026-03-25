@@ -18,7 +18,7 @@ CREATE TABLE users (
   email        text        NOT NULL UNIQUE,
   display_name text        NOT NULL,
   avatar_url   text,
-  language     text        NOT NULL DEFAULT 'he'    CHECK (language IN ('he', 'en')),
+  language     text        NOT NULL DEFAULT 'he'    CHECK (language   IN ('he', 'en')),
   instrument   text        NOT NULL DEFAULT 'guitar' CHECK (instrument IN ('guitar', 'piano')),
   created_at   timestamp   DEFAULT now()
 );
@@ -33,8 +33,7 @@ CREATE TABLE songs (
   source_url  text,                            -- original URL chords were fetched from
   instrument  text        DEFAULT 'guitar'     CHECK (instrument IN ('guitar', 'piano')),
   transpose   int         DEFAULT 0,           -- semitone shift (-11 to +11)
-  created_at  timestamp   DEFAULT now(),
-  UNIQUE (user_id, title, artist)              -- needed for upsert on conflict
+  created_at  timestamp   DEFAULT now()
 );
 
 CREATE TABLE playlists (

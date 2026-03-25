@@ -13,217 +13,34 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
-
-import { supabase } from '../../lib/supabase';
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-const PRIMARY = '#5B4FE8';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? '';
+import i18next from 'i18next';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type SearchResult = {
-  id?: string;
+  id: string;
   title: string;
   artist: string;
-  source: string;
-  from_db: boolean;
-  url?: string;
 };
 
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 // ---------------------------------------------------------------------------
-// Source badge config
+// Real search — calls backend (cache-first, scrapes if needed)
 // ---------------------------------------------------------------------------
 
-const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
-  saved:           { label: 'שמור',   color: '#10B981' },
-  tab4u:           { label: 'Tab4U',  color: '#F59E0B' },
-  negina:          { label: 'Negina', color: '#8B5CF6' },
-  ultimate_guitar: { label: 'UG',     color: '#EF4444' },
-};
+async function fetchSearchResults(query: string): Promise<SearchResult[]> {
+  const lang = i18next.language === 'he' ? 'he' : 'en';
+  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+  const url = `${backendUrl}/api/chords/search?q=${encodeURIComponent(query.trim())}&lang=${lang}`;
 
-function sourceBadge(source: string) {
-  return SOURCE_BADGE[source] ?? { label: source, color: '#6B7280' };
-}
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Backend error ${resp.status}`);
 
-// ---------------------------------------------------------------------------
-// Negina search — JSON API, no Cloudflare, works from any HTTP client
-// GET https://negina.co.il/songs/search?query=...&limit=N
-// Response: [{ id, slug, name, artist, type }]
-// ---------------------------------------------------------------------------
-
-async function searchNegina(query: string): Promise<SearchResult[]> {
-  try {
-    const q   = encodeURIComponent(query);
-    const url = `https://negina.co.il/songs/search?query=${q}&limit=30`;
-    console.log('[negina] fetching:', url);
-
-    const res = await fetch(url, {
-      headers: {
-        'Accept':          'application/json',
-        'Accept-Language': 'he-IL,he;q=0.9,en;q=0.8',
-      },
-    });
-    console.log('[negina] status:', res.status);
-    if (!res.ok) return [];
-
-    const data: Array<{ id: number; slug: string; name: string; artist: string; type: string }> =
-      await res.json();
-    console.log('[negina] raw items:', data.length);
-
-    const results: SearchResult[] = [];
-    const seen   = new Set<string>();
-
-    for (const item of data) {
-      if (!item.name) continue;
-      const title  = item.name.trim();
-      const artist = (item.artist ?? '').replace(/-/g, ' ').trim();
-      const key    = `${title}|${artist}`.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      results.push({
-        title,
-        artist,
-        source:  'negina',
-        from_db: false,
-        url:     `https://negina.co.il/chords/${encodeURIComponent(item.artist)}/${encodeURIComponent(item.slug)}`,
-      });
-    }
-
-    console.log('[negina] results:', results.length);
-    return results;
-  } catch (e) {
-    console.error('[negina] error:', e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backend search — proxies Tab4U (Cloudflare bypass via Python cloudscraper)
-// Only called when API_URL is configured and reachable.
-// ---------------------------------------------------------------------------
-
-async function searchBackend(query: string, lang: string): Promise<SearchResult[]> {
-  if (!API_URL) return [];
-  try {
-    const q   = encodeURIComponent(query);
-    const url = `${API_URL}/search?q=${q}&lang=${lang}`;
-    console.log('[backend] fetching:', url);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-
-    console.log('[backend] status:', res.status);
-    if (!res.ok) return [];
-
-    const data: Array<{ title: string; artist: string; source: string; url?: string }> =
-      await res.json();
-    console.log('[backend] results:', data.length);
-
-    return data
-      .filter((item) => item.source !== 'negina') // avoid duplicates with direct Negina call
-      .map((item) => ({
-        title:   item.title,
-        artist:  item.artist ?? '',
-        source:  item.source,
-        from_db: false,
-        url:     item.url,
-      }));
-  } catch (e) {
-    console.error('[backend] error (non-fatal):', e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Saved songs from Supabase
-// ---------------------------------------------------------------------------
-
-async function searchSavedSongs(query: string): Promise<SearchResult[]> {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
-
-    const { data } = await supabase
-      .from('songs')
-      .select('id, title, artist')
-      .eq('user_id', user.id)
-      .or(`title.ilike.%${query}%,artist.ilike.%${query}%`)
-      .limit(10);
-
-    return (data ?? []).map((s) => ({
-      id:      s.id,
-      title:   s.title,
-      artist:  s.artist,
-      source:  'saved',
-      from_db: true,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Combined search
-// Results order: saved → Tab4U (via backend) → Negina
-// Tab4U results come with source URLs and are preferred because their chord
-// pages can be fetched directly. Negina results are de-duped against Tab4U.
-// ---------------------------------------------------------------------------
-
-// Source priority for display ordering (lower index = shown first)
-const SOURCE_ORDER: Record<string, number> = { saved: 0, tab4u: 1, negina: 2, ultimate_guitar: 3 };
-
-async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
-  const q = query.trim();
-  if (!q) return [];
-
-  const settled = await Promise.allSettled([
-    searchSavedSongs(q),
-    searchNegina(q),
-    searchBackend(q, lang),   // Tab4U + any other sources via backend proxy
-  ]);
-
-  // Collect all results — Tab4U first, then Negina (deduped by title+artist)
-  const bySource: Record<string, SearchResult[]> = {};
-
-  for (const s of settled) {
-    if (s.status !== 'fulfilled') continue;
-    for (const item of s.value) {
-      if (!bySource[item.source]) bySource[item.source] = [];
-      bySource[item.source].push(item);
-    }
-  }
-
-  const seen    = new Set<string>();
-  const results: SearchResult[] = [];
-
-  // Sort source keys by priority, then deduplicate
-  const orderedSources = Object.keys(bySource).sort(
-    (a, b) => (SOURCE_ORDER[a] ?? 99) - (SOURCE_ORDER[b] ?? 99),
-  );
-
-  for (const src of orderedSources) {
-    for (const item of bySource[src]) {
-      const key = `${item.title}|${item.artist}`.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        results.push(item);
-      }
-    }
-  }
-
-  return results;
+  const data: Array<{ id: string; song_title: string; artist: string }> = await resp.json();
+  return data.map((r) => ({ id: r.id, title: r.song_title, artist: r.artist }));
 }
 
 // ---------------------------------------------------------------------------
@@ -231,13 +48,12 @@ async function searchAll(query: string, lang: string): Promise<SearchResult[]> {
 // ---------------------------------------------------------------------------
 
 export default function SearchScreen() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const isRTL = I18nManager.isRTL;
-  const lang  = i18n.language === 'he' ? 'he' : 'en';
 
-  const [query,   setQuery]   = useState('');
+  const [query, setQuery]     = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [status,  setStatus]  = useState<Status>('idle');
+  const [status, setStatus]   = useState<Status>('idle');
   const inputRef              = useRef<TextInput>(null);
 
   const handleSearch = useCallback(async () => {
@@ -245,120 +61,85 @@ export default function SearchScreen() {
     Keyboard.dismiss();
     setStatus('loading');
     try {
-      const data = await searchAll(query, lang);
+      const data = await fetchSearchResults(query);
       setResults(data);
       setStatus('done');
     } catch {
       setStatus('error');
     }
-  }, [query, lang]);
-
-  const handleSelectResult = useCallback((item: SearchResult) => {
-    if (item.from_db && item.id) {
-      router.push(`/song/${item.id}`);
-    } else {
-      const params = new URLSearchParams({
-        title:  item.title,
-        artist: item.artist ?? '',
-        lang,
-        source: item.source,
-        ...(item.url ? { url: item.url } : {}),
-      });
-      router.push(`/song/new?${params.toString()}`);
-    }
-  }, [lang]);
+  }, [query]);
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, isRTL && styles.safeRTL]}>
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>
-          {t('search')}
-        </Text>
-        <View style={[styles.searchRow, isRTL && styles.searchRowRTL]}>
-          <TextInput
-            ref={inputRef}
-            style={[styles.input, isRTL && styles.inputRTL]}
-            placeholder={t('search_placeholder')}
-            placeholderTextColor="rgba(255,255,255,0.6)"
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textAlign={isRTL ? 'right' : 'left'}
-          />
-          <TouchableOpacity
-            style={[styles.searchBtn, !query.trim() && styles.searchBtnDisabled]}
-            onPress={handleSearch}
-            disabled={!query.trim()}
-          >
-            <Text style={styles.searchBtnText}>{t('search')}</Text>
-          </TouchableOpacity>
+      {/* ── Search bar ── */}
+      <View style={styles.searchRow}>
+        <TextInput
+          ref={inputRef}
+          style={[styles.input, isRTL && styles.inputRTL]}
+          placeholder={t('search_placeholder')}
+          placeholderTextColor="#aaa"
+          value={query}
+          onChangeText={setQuery}
+          onSubmitEditing={handleSearch}
+          returnKeyType="search"
+          autoCapitalize="none"
+          autoCorrect={false}
+          textAlign={isRTL ? 'right' : 'left'}
+        />
+        <TouchableOpacity
+          style={[styles.searchBtn, !query.trim() && styles.searchBtnDisabled]}
+          onPress={handleSearch}
+          disabled={!query.trim()}
+        >
+          <Text style={styles.searchBtnText}>{t('search')}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Content area ── */}
+      {status === 'idle' && (
+        <View style={styles.center}>
+          <Text style={[styles.hint, isRTL && styles.textRTL]}>
+            {t('search_hint')}
+          </Text>
         </View>
-      </View>
+      )}
 
-      {/* ── Body ── */}
-      <View style={styles.body}>
+      {status === 'loading' && (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#4285F4" />
+          <Text style={styles.loadingText}>{t('loading')}</Text>
+        </View>
+      )}
 
-        {status === 'idle' && (
-          <View style={styles.center}>
-            <Text style={styles.hintEmoji}>🎵</Text>
-            <Text style={[styles.hint, isRTL && styles.textRTL]}>
-              {t('search_hint')}
-            </Text>
-          </View>
-        )}
+      {status === 'error' && (
+        <View style={styles.center}>
+          <Text style={[styles.errorText, isRTL && styles.textRTL]}>
+            {t('error_fetch')}
+          </Text>
+        </View>
+      )}
 
-        {status === 'loading' && (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={PRIMARY} />
-            <Text style={[styles.loadingText, isRTL && styles.textRTL]}>
-              {t('searching_sources')}
-            </Text>
-          </View>
-        )}
+      {status === 'done' && results.length === 0 && (
+        <View style={styles.center}>
+          <Text style={[styles.hint, isRTL && styles.textRTL]}>
+            {t('no_results')}
+          </Text>
+        </View>
+      )}
 
-        {status === 'error' && (
-          <View style={styles.center}>
-            <Text style={styles.hintEmoji}>😕</Text>
-            <Text style={[styles.errorText, isRTL && styles.textRTL]}>
-              {t('error_fetch')}
-            </Text>
-          </View>
-        )}
-
-        {status === 'done' && results.length === 0 && (
-          <View style={styles.center}>
-            <Text style={styles.hintEmoji}>🔇</Text>
-            <Text style={[styles.hint, isRTL && styles.textRTL]}>
-              {t('no_results')}
-            </Text>
-          </View>
-        )}
-
-        {status === 'done' && results.length > 0 && (
-          <>
-            <View style={[styles.countRow, isRTL && styles.countRowRTL]}>
-              <Text style={styles.countText}>
-                {results.length} {t('results_found')}
-              </Text>
-            </View>
-            <FlatList
-              data={results}
-              keyExtractor={(item, idx) => item.id ?? `${item.source}-${idx}`}
-              contentContainerStyle={styles.list}
-              keyboardShouldPersistTaps="handled"
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-              renderItem={({ item }) => (
-                <ResultItem item={item} isRTL={isRTL} onPress={handleSelectResult} />
-              )}
-            />
-          </>
-        )}
-      </View>
+      {status === 'done' && results.length > 0 && (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item }) => (
+            <ResultItem item={item} isRTL={isRTL} />
+          )}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -367,42 +148,28 @@ export default function SearchScreen() {
 // Result row
 // ---------------------------------------------------------------------------
 
-function ResultItem({
-  item,
-  isRTL,
-  onPress,
-}: {
-  item: SearchResult;
-  isRTL: boolean;
-  onPress: (item: SearchResult) => void;
-}) {
-  const badge = sourceBadge(item.source);
-
+function ResultItem({ item, isRTL }: { item: SearchResult; isRTL: boolean }) {
   return (
     <TouchableOpacity
-      style={[styles.resultCard, isRTL && styles.resultCardRTL]}
-      onPress={() => onPress(item)}
+      style={[styles.resultRow, isRTL && styles.resultRowRTL]}
+      onPress={() => router.push(`/song/${item.id}`)}
       activeOpacity={0.7}
     >
-      <View style={styles.resultIcon}>
-        <Text style={styles.resultIconText}>🎵</Text>
-      </View>
-
-      <View style={[styles.resultText, isRTL && styles.resultTextRTL]}>
-        <Text style={[styles.resultTitle, isRTL && styles.textRTL]} numberOfLines={1}>
+      <View style={styles.resultText}>
+        <Text
+          style={[styles.resultTitle, isRTL && styles.textRTL]}
+          numberOfLines={1}
+        >
           {item.title}
         </Text>
-        {!!item.artist && (
-          <Text style={[styles.resultArtist, isRTL && styles.textRTL]} numberOfLines={1}>
-            {item.artist}
-          </Text>
-        )}
+        <Text
+          style={[styles.resultArtist, isRTL && styles.textRTL]}
+          numberOfLines={1}
+        >
+          {item.artist}
+        </Text>
       </View>
-
-      <View style={[styles.badge, { backgroundColor: badge.color }]}>
-        <Text style={styles.badgeText}>{badge.label}</Text>
-      </View>
-
+      {/* Chevron flips direction for RTL */}
       <Text style={styles.chevron}>{isRTL ? '‹' : '›'}</Text>
     </TouchableOpacity>
   );
@@ -415,72 +182,52 @@ function ResultItem({
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F4F3FF',
+    backgroundColor: '#fff',
+  },
+  safeRTL: {
+    direction: 'rtl',
   },
 
-  // Header
-  header: {
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
-    gap: 14,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
+  // Search bar
   searchRow: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  searchRowRTL: {
-    flexDirection: 'row-reverse',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
   input: {
     flex: 1,
-    height: 46,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    fontSize: 16,
-    color: '#FFFFFF',
+    height: 44,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    backgroundColor: '#f9f9f9',
   },
   inputRTL: {
     writingDirection: 'rtl',
   },
   searchBtn: {
-    height: 46,
+    height: 44,
     paddingHorizontal: 18,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: '#4285F4',
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchBtnDisabled: {
-    opacity: 0.5,
+    backgroundColor: '#aaa',
   },
   searchBtnText: {
-    color: PRIMARY,
-    fontWeight: '700',
+    color: '#fff',
+    fontWeight: '600',
     fontSize: 15,
   },
 
-  // Body
-  body: {
-    flex: 1,
-  },
+  // Centered states
   center: {
     flex: 1,
     alignItems: 'center',
@@ -488,24 +235,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 12,
   },
-  hintEmoji: {
-    fontSize: 48,
-    marginBottom: 4,
-  },
   hint: {
     fontSize: 15,
-    color: '#6B7280',
+    color: '#888',
     textAlign: 'center',
   },
   loadingText: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#888',
     marginTop: 8,
-    textAlign: 'center',
   },
   errorText: {
     fontSize: 15,
-    color: '#EF4444',
+    color: '#cc3333',
     textAlign: 'center',
   },
   textRTL: {
@@ -513,92 +255,40 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Count
-  countRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  countRowRTL: {
-    flexDirection: 'row-reverse',
-  },
-  countText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    fontWeight: '500',
-  },
-
-  // List
+  // Results list
   list: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingVertical: 4,
   },
   separator: {
-    height: 8,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 16,
   },
-
-  // Result card
-  resultCard: {
+  resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 16,
   },
-  resultCardRTL: {
+  resultRowRTL: {
     flexDirection: 'row-reverse',
-  },
-  resultIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#F4F3FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resultIconText: {
-    fontSize: 20,
   },
   resultText: {
     flex: 1,
     gap: 3,
   },
-  resultTextRTL: {
-    alignItems: 'flex-end',
-  },
   resultTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1A1A2E',
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111',
   },
   resultArtist: {
     fontSize: 13,
-    color: '#6B7280',
+    color: '#666',
   },
-
-  // Badge
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    alignSelf: 'center',
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    letterSpacing: 0.3,
-  },
-
   chevron: {
-    fontSize: 18,
-    color: '#D1D5DB',
+    fontSize: 20,
+    color: '#bbb',
+    marginHorizontal: 4,
   },
 });

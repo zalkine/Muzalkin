@@ -2,630 +2,453 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   I18nManager,
   Modal,
   SafeAreaView,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 
-import ChordDisplay, { ChordLine } from '../../components/ChordDisplay';
 import { supabase } from '../../lib/supabase';
+import ChordDisplay, { ChordLine } from '../../components/ChordDisplay';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type SongData = {
+type CachedChord = {
   id: string;
-  title: string;
+  song_title: string;
   artist: string;
-  instrument: string;
   language: string;
-  transpose: number;
+  source: string;
   chords_data: ChordLine[];
-  source_url?: string;
+  raw_url: string | null;
 };
 
-type Playlist = {
-  id: string;
-  name: string;
+type Playlist = { id: string; name: string };
+type Status   = 'loading' | 'done' | 'error';
+
+// ---------------------------------------------------------------------------
+// Chord transposition helpers
+// ---------------------------------------------------------------------------
+
+const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const ENHARMONIC: Record<string, string> = {
+  'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#',
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
+function transposeNote(note: string, semitones: number): string {
+  const normalized = ENHARMONIC[note] ?? note;
+  const idx = CHROMATIC.indexOf(normalized);
+  if (idx === -1) return note;
+  return CHROMATIC[(idx + semitones + 12) % 12];
+}
 
-// ---------------------------------------------------------------------------
-// Data helpers
-// ---------------------------------------------------------------------------
+const CHORD_RE = /[A-G][#b]?(m|maj|min|sus[24]?|dim|aug|add\d+|[0-9])*(?:\/[A-G][#b]?)?/g;
 
-/** Fetch song data — handles new web fetch, saved songs, and cached chords. */
-async function loadSong(
-  id: string,
-  title?: string,
-  artist?: string,
-  lang?: string,
-  sourceUrl?: string,
-  source?: string,
-): Promise<SongData | null> {
-  // New song: fetch from backend passing the direct URL from search results
-  if (id === 'new') {
-    if (!title) return null;
-    try {
-      const params = new URLSearchParams({
-        title,
-        artist: artist ?? '',
-        lang:   lang ?? 'he',
-        ...(sourceUrl ? { url: sourceUrl }     : {}),
-        ...(source    ? { source }             : {}),
-      });
-      const res = await fetch(`${API_URL}/chords?${params.toString()}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return {
-        id: 'new',
-        title,
-        artist:      artist ?? '',
-        instrument:  'guitar',
-        language:    lang ?? 'he',
-        transpose:   0,
-        chords_data: data.chords_data,
-        source_url:  data.raw_url,
-      };
-    } catch {
-      return null;
+function transposeLine(content: string, semitones: number): string {
+  if (semitones === 0) return content;
+  return content.replace(CHORD_RE, (match) => {
+    // Split off bass note if present (e.g. C/E → C and E)
+    const slashIdx = match.indexOf('/');
+    if (slashIdx !== -1) {
+      const root = match.slice(0, slashIdx);
+      const bass = match.slice(slashIdx + 1);
+      const rootNote = root.match(/^[A-G][#b]?/)?.[0] ?? '';
+      const suffix   = root.slice(rootNote.length);
+      const bassNote = bass.match(/^[A-G][#b]?/)?.[0] ?? '';
+      return `${transposeNote(rootNote, semitones)}${suffix}/${transposeNote(bassNote, semitones)}`;
     }
-  }
-
-  // 1. Try saved songs table
-  const { data: saved } = await supabase
-    .from('songs')
-    .select('*')
-    .eq('id', id)
-    .single();
-  if (saved) return saved as SongData;
-
-  // 2. Try cached_chords table
-  const { data: cached } = await supabase
-    .from('cached_chords')
-    .select('*')
-    .eq('id', id)
-    .single();
-  if (cached) {
-    return {
-      id: cached.id,
-      title: cached.song_title,
-      artist: cached.artist,
-      instrument: 'guitar',
-      language: cached.language,
-      transpose: 0,
-      chords_data: cached.chords_data,
-      source_url: cached.raw_url,
-    };
-  }
-
-  return null;
-}
-
-/** Persist song to songs table, return the saved row's id. */
-async function saveSong(song: SongData, semitones: number): Promise<string> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { data, error } = await supabase
-    .from('songs')
-    .upsert(
-      {
-        user_id:   user.id,
-        title:     song.title,
-        artist:    song.artist,
-        language:  song.language,
-        chords_data: song.chords_data,
-        source_url:  song.source_url,
-        instrument: song.instrument,
-        transpose:  semitones,
-      },
-      { onConflict: 'user_id,title,artist' },
-    )
-    .select('id')
-    .single();
-
-  if (error) throw error;
-  return data.id as string;
-}
-
-/** Fetch user's playlists. */
-async function fetchPlaylists(): Promise<Playlist[]> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data } = await supabase
-    .from('playlists')
-    .select('id, name')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
-
-  return (data ?? []) as Playlist[];
-}
-
-/** Add a song to a playlist. Song is saved first if needed. */
-async function addToPlaylist(
-  song: SongData,
-  semitones: number,
-  playlistId: string,
-): Promise<void> {
-  // Ensure song is saved first
-  let songId = song.id !== 'new' ? song.id : null;
-  if (!songId) {
-    songId = await saveSong(song, semitones);
-  }
-
-  // Get current max position in playlist
-  const { data: existing } = await supabase
-    .from('playlist_songs')
-    .select('position')
-    .eq('playlist_id', playlistId)
-    .order('position', { ascending: false })
-    .limit(1);
-
-  const nextPosition = ((existing?.[0]?.position as number) ?? 0) + 1;
-
-  const { error } = await supabase.from('playlist_songs').insert({
-    playlist_id: playlistId,
-    song_id:     songId,
-    position:    nextPosition,
+    const rootNote = match.match(/^[A-G][#b]?/)?.[0] ?? '';
+    const suffix   = match.slice(rootNote.length);
+    return `${transposeNote(rootNote, semitones)}${suffix}`;
   });
-
-  if (error) throw error;
 }
 
-/** Create a new playlist with the given name. */
-async function createPlaylist(name: string): Promise<Playlist> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { data, error } = await supabase
-    .from('playlists')
-    .insert({ user_id: user.id, name, is_public: false })
-    .select('id, name')
-    .single();
-
-  if (error) throw error;
-  return data as Playlist;
+function applyTranspose(data: ChordLine[], semitones: number): ChordLine[] {
+  if (semitones === 0) return data;
+  return data.map((line) =>
+    line.type === 'chords'
+      ? { ...line, content: transposeLine(line.content, semitones) }
+      : line,
+  );
 }
+
+// ---------------------------------------------------------------------------
+// Auto-scroll speeds (pixels per tick)
+// ---------------------------------------------------------------------------
+
+const SCROLL_SPEEDS = [0.5, 1, 1.5, 2.5, 4]; // px per 50ms tick
 
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
 
-// Scroll step per tick (pixels at 50ms interval):  1=slow … 5=fast
-const SPEED_LABELS = ['', '🐢', '🐌', '🚶', '🏃', '🚀'];
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
 
-export default function SongScreen() {
-  const { id, title, artist, lang, url: sourceUrl, source } = useLocalSearchParams<{
-    id: string;
-    title?: string;
-    artist?: string;
-    lang?: string;
-    url?: string;
-    source?: string;
-  }>();
-  const { t } = useTranslation();
+export default function SongDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { t }  = useTranslation();
+  const isRTL  = I18nManager.isRTL;
 
-  const scrollRef        = useRef<ScrollView>(null);
-  const autoScrollTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [song,      setSong]      = useState<CachedChord | null>(null);
+  const [status,    setStatus]    = useState<Status>('loading');
+  const [saving,    setSaving]    = useState(false);
+  const [savedId,   setSavedId]   = useState<string | null>(null); // song_id after save
 
-  const [song,        setSong]        = useState<SongData | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [semitones,   setSemitones]   = useState(0);
-  const [autoScroll,  setAutoScroll]  = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState(2);           // 1–5
-  const [saving,      setSaving]      = useState(false);
+  // Transpose
+  const [semitones, setSemitones] = useState(0);
 
-  // RTL follows the song's language once loaded, falls back to device setting
-  const [isRTL, setIsRTL] = useState(I18nManager.isRTL);
+  // Auto-scroll
+  const scrollRef    = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  const scrollTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [scrolling,   setScrolling]   = useState(false);
+  const [speedIndex,  setSpeedIndex]  = useState(1); // index into SCROLL_SPEEDS
 
-  // Edit mode
-  const [editMode,    setEditMode]    = useState(false);
-  const [editedLines, setEditedLines] = useState<ChordLine[]>([]);
+  // Add-to-playlist modal
+  const [playlists,       setPlaylists]       = useState<Playlist[]>([]);
+  const [playlistModal,   setPlaylistModal]   = useState(false);
+  const [addingPlaylist,  setAddingPlaylist]  = useState(false);
 
-  // Playlist modal
-  const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-  const [playlists,         setPlaylists]         = useState<Playlist[]>([]);
-  const [newPlaylistName,   setNewPlaylistName]   = useState('');
-  const [showNewInput,      setShowNewInput]      = useState(false);
-  const [playlistLoading,   setPlaylistLoading]   = useState(false);
+  // ---------------------------------------------------------------------------
+  // Load song
+  // ---------------------------------------------------------------------------
 
-  // Load song on mount
   useEffect(() => {
     if (!id) return;
-    loadSong(id, title, artist, lang, sourceUrl, source)
-      .then((data) => {
-        setSong(data);
-        if (data) {
-          setSemitones(data.transpose ?? 0);
-          setEditedLines(data.chords_data);
-          setIsRTL(data.language === 'he');
+
+    supabase
+      .from('cached_chords')
+      .select('*')
+      .eq('id', id)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          setStatus('error');
+        } else {
+          setSong(data as CachedChord);
+          setStatus('done');
         }
-      })
-      .finally(() => setLoading(false));
+      });
   }, [id]);
 
-  // Auto-scroll logic — step size scales with scrollSpeed (1=slow … 5=fast)
+  // Cleanup scroll timer on unmount
   useEffect(() => {
-    if (autoScroll) {
-      const step = scrollSpeed;           // pixels per 50 ms tick
-      autoScrollTimer.current = setInterval(() => {
-        scrollRef.current?.scrollTo({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          y: ((scrollRef.current as any)?._contentOffset?.y ?? 0) + step,
-          animated: false,
-        });
-      }, 50);
-    } else {
-      if (autoScrollTimer.current) {
-        clearInterval(autoScrollTimer.current);
-        autoScrollTimer.current = null;
-      }
-    }
-    return () => {
-      if (autoScrollTimer.current) clearInterval(autoScrollTimer.current);
-    };
-  }, [autoScroll, scrollSpeed]);
-
-  const handleTranspose = useCallback((delta: number) => {
-    setSemitones((prev) => Math.max(-6, Math.min(6, prev + delta)));
+    return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
   }, []);
 
-  // ── Save song ──
+  // ---------------------------------------------------------------------------
+  // Save song to library
+  // ---------------------------------------------------------------------------
+
   const handleSave = useCallback(async () => {
     if (!song) return;
     setSaving(true);
+
     try {
-      const savedId = await saveSong(
-        editMode ? { ...song, chords_data: editedLines } : song,
-        semitones,
-      );
-      // Update local id so subsequent saves don't create duplicates
-      setSong((prev) => prev ? { ...prev, id: savedId } : prev);
-      Alert.alert(t('save_song'), t('song_saved_ok'));
-    } catch (e) {
-      Alert.alert('Error', (e as Error).message);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const resp = await fetch(`${BACKEND_URL}/api/songs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ cached_chord_id: song.id }),
+      });
+
+      if (!resp.ok) throw new Error('Save failed');
+      const saved = await resp.json();
+      setSavedId(saved.id);
+      Alert.alert(t('saved'));
+    } catch {
+      Alert.alert(t('save_error'));
     } finally {
       setSaving(false);
     }
-  }, [song, semitones, editMode, editedLines, t]);
+  }, [song, t]);
 
-  // ── Edit mode ──
-  const handleToggleEdit = useCallback(() => {
-    if (editMode) {
-      // Committing edits: update song data
-      setSong((prev) => prev ? { ...prev, chords_data: editedLines } : prev);
-    } else {
-      setEditedLines(song?.chords_data ?? []);
-    }
-    setEditMode((v) => !v);
-  }, [editMode, editedLines, song]);
+  // ---------------------------------------------------------------------------
+  // Transpose
+  // ---------------------------------------------------------------------------
 
-  const handleEditLine = useCallback((index: number, content: string) => {
-    setEditedLines((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], content };
+  const adjustTranspose = useCallback((delta: number) => {
+    setSemitones((prev) => {
+      const next = Math.max(-11, Math.min(11, prev + delta));
       return next;
     });
   }, []);
 
-  // ── Add to playlist ──
-  const handleOpenPlaylist = useCallback(async () => {
-    setPlaylistLoading(true);
-    setShowPlaylistModal(true);
-    setNewPlaylistName('');
-    setShowNewInput(false);
-    try {
-      const data = await fetchPlaylists();
-      setPlaylists(data);
-    } finally {
-      setPlaylistLoading(false);
+  // ---------------------------------------------------------------------------
+  // Auto-scroll
+  // ---------------------------------------------------------------------------
+
+  const toggleScroll = useCallback(() => {
+    if (scrolling) {
+      if (scrollTimer.current) clearInterval(scrollTimer.current);
+      scrollTimer.current = null;
+      setScrolling(false);
+    } else {
+      setScrolling(true);
+      scrollTimer.current = setInterval(() => {
+        scrollOffset.current += SCROLL_SPEEDS[speedIndex];
+        scrollRef.current?.scrollTo({ y: scrollOffset.current, animated: false });
+      }, 50);
     }
-  }, []);
+  }, [scrolling, speedIndex]);
 
-  const handleSelectPlaylist = useCallback(
-    async (playlistId: string) => {
-      if (!song) return;
-      setShowPlaylistModal(false);
-      setSaving(true);
-      try {
-        await addToPlaylist(
-          editMode ? { ...song, chords_data: editedLines } : song,
-          semitones,
-          playlistId,
-        );
-        Alert.alert(t('add_to_playlist'), t('added_to_playlist_ok'));
-      } catch (e) {
-        Alert.alert('Error', (e as Error).message);
-      } finally {
-        setSaving(false);
-      }
-    },
-    [song, semitones, editMode, editedLines, t],
-  );
-
-  const handleCreateAndAdd = useCallback(async () => {
-    const name = newPlaylistName.trim();
-    if (!name || !song) return;
-    setShowPlaylistModal(false);
-    setSaving(true);
-    try {
-      const pl = await createPlaylist(name);
-      await addToPlaylist(
-        editMode ? { ...song, chords_data: editedLines } : song,
-        semitones,
-        pl.id,
-      );
-      Alert.alert(t('add_to_playlist'), t('added_to_playlist_ok'));
-    } catch (e) {
-      Alert.alert('Error', (e as Error).message);
-    } finally {
-      setSaving(false);
-      setNewPlaylistName('');
+  const cycleSpeed = useCallback(() => {
+    // Stop scroll, change speed, restart
+    if (scrollTimer.current) clearInterval(scrollTimer.current);
+    scrollTimer.current = null;
+    const nextIdx = (speedIndex + 1) % SCROLL_SPEEDS.length;
+    setSpeedIndex(nextIdx);
+    if (scrolling) {
+      scrollTimer.current = setInterval(() => {
+        scrollOffset.current += SCROLL_SPEEDS[nextIdx];
+        scrollRef.current?.scrollTo({ y: scrollOffset.current, animated: false });
+      }, 50);
     }
-  }, [newPlaylistName, song, semitones, editMode, editedLines, t]);
+  }, [scrolling, speedIndex]);
 
-  // ── Render: loading ──
-  if (loading) {
+  // ---------------------------------------------------------------------------
+  // Share
+  // ---------------------------------------------------------------------------
+
+  const handleShare = useCallback(async () => {
+    if (!song) return;
+    try {
+      const message = t('share_message', { title: song.song_title, artist: song.artist });
+      await Share.share({ message });
+    } catch {
+      // User cancelled or error — no alert needed
+    }
+  }, [song, t]);
+
+  // ---------------------------------------------------------------------------
+  // Add to playlist
+  // ---------------------------------------------------------------------------
+
+  const openPlaylistModal = useCallback(async () => {
+    if (!savedId) {
+      Alert.alert(t('save_song'), t('no_saved_songs'));
+      return;
+    }
+
+    // Load playlists
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('playlists')
+      .select('id, name')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    setPlaylists((data ?? []) as Playlist[]);
+    setPlaylistModal(true);
+  }, [savedId, t]);
+
+  const handleAddToPlaylist = useCallback(async (playlistId: string) => {
+    if (!savedId) return;
+    setAddingPlaylist(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const resp = await fetch(`${BACKEND_URL}/api/playlists/${playlistId}/songs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ song_id: savedId }),
+      });
+
+      if (!resp.ok) throw new Error('Add failed');
+      setPlaylistModal(false);
+      Alert.alert(t('playlist_added'));
+    } catch {
+      Alert.alert(t('playlist_add_error'));
+    } finally {
+      setAddingPlaylist(false);
+    }
+  }, [savedId, t]);
+
+  // ---------------------------------------------------------------------------
+  // Render — loading / error
+  // ---------------------------------------------------------------------------
+
+  if (status === 'loading') {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#4285F4" />
-          <Text style={styles.loadingText}>{t('loading')}</Text>
-        </View>
+      <SafeAreaView style={styles.center}>
+        <ActivityIndicator size="large" color="#4285F4" />
+        <Text style={styles.loadingText}>{t('loading')}</Text>
       </SafeAreaView>
     );
   }
 
-  // ── Render: not found ──
-  if (!song) {
+  if (status === 'error' || !song) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.center}>
-          <Text style={styles.errorText}>{t('error_fetch')}</Text>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backBtnText}>{isRTL ? 'חיפוש →' : '← ' + t('search')}</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.center}>
+        <Text style={styles.errorText}>{t('error_load')}</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Text style={styles.backBtnText}>←</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
 
-  // ── Render: song ──
+  const displayData = applyTranspose(song.chords_data, semitones);
+
+  // ---------------------------------------------------------------------------
+  // Render — main
+  // ---------------------------------------------------------------------------
+
   return (
     <SafeAreaView style={styles.safe}>
 
-      {/* ── Header ── */}
+      {/* ── Header row 1: back + title + save ── */}
       <View style={[styles.header, isRTL && styles.headerRTL]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.backArrow}>{isRTL ? '→' : '←'}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+          <Text style={styles.iconBtnText}>{isRTL ? '→' : '←'}</Text>
         </TouchableOpacity>
-        <View style={styles.headerText}>
+
+        <View style={[styles.headerMeta, isRTL && styles.headerMetaRTL]}>
           <Text style={[styles.songTitle, isRTL && styles.textRTL]} numberOfLines={1}>
-            {song.title}
+            {song.song_title}
           </Text>
           <Text style={[styles.songArtist, isRTL && styles.textRTL]} numberOfLines={1}>
             {song.artist}
           </Text>
         </View>
 
-        {/* Action buttons in header */}
-        <View style={[styles.headerActions, isRTL && styles.headerActionsRTL]}>
-          {/* Edit toggle */}
+        <TouchableOpacity
+          style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          <Text style={styles.saveBtnText}>
+            {saving ? t('saving') : savedId ? '✓' : t('save_song')}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Toolbar row 2: transpose + auto-scroll + share + playlist ── */}
+      <View style={[styles.toolbar, isRTL && styles.toolbarRTL]}>
+
+        {/* Transpose controls */}
+        <View style={styles.transposeGroup}>
+          <TouchableOpacity style={styles.toolBtn} onPress={() => adjustTranspose(-1)}>
+            <Text style={styles.toolBtnText}>{t('transpose_down')}</Text>
+          </TouchableOpacity>
+          <Text style={styles.semitoneLabel}>
+            {semitones > 0 ? `+${semitones}` : `${semitones}`}
+          </Text>
+          <TouchableOpacity style={styles.toolBtn} onPress={() => adjustTranspose(1)}>
+            <Text style={styles.toolBtnText}>{t('transpose_up')}</Text>
+          </TouchableOpacity>
+          {semitones !== 0 && (
+            <TouchableOpacity style={styles.toolBtnSmall} onPress={() => setSemitones(0)}>
+              <Text style={styles.toolBtnSmallText}>{t('transpose_reset')}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.toolbarRight}>
+          {/* Auto-scroll speed (only shown when scrolling) */}
+          {scrolling && (
+            <TouchableOpacity style={styles.toolBtn} onPress={cycleSpeed}>
+              <Text style={styles.toolBtnText}>
+                {`×${SCROLL_SPEEDS[speedIndex]}`}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Auto-scroll toggle */}
           <TouchableOpacity
-            style={[styles.iconBtn, editMode && styles.iconBtnActive]}
-            onPress={handleToggleEdit}
+            style={[styles.toolBtn, scrolling && styles.toolBtnActive]}
+            onPress={toggleScroll}
           >
-            <Text style={[styles.iconBtnText, editMode && styles.iconBtnTextActive]}>
-              {editMode ? t('done') : t('edit')}
+            <Text style={[styles.toolBtnText, scrolling && styles.toolBtnActiveText]}>
+              {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
             </Text>
+          </TouchableOpacity>
+
+          {/* Share */}
+          <TouchableOpacity style={styles.iconToolBtn} onPress={handleShare}>
+            <Text style={styles.toolBtnText}>{t('share')}</Text>
           </TouchableOpacity>
 
           {/* Add to playlist */}
-          <TouchableOpacity
-            style={[styles.iconBtn, saving && styles.iconBtnDisabled]}
-            onPress={handleOpenPlaylist}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#4285F4" />
-            ) : (
-              <Text style={styles.iconBtnEmoji}>📋</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* Save */}
-          <TouchableOpacity
-            style={[styles.iconBtn, saving && styles.iconBtnDisabled]}
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color="#4285F4" />
-            ) : (
-              <Text style={styles.iconBtnEmoji}>💾</Text>
-            )}
+          <TouchableOpacity style={styles.iconToolBtn} onPress={openPlaylistModal}>
+            <Text style={styles.toolBtnText}>+PL</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── Toolbar ── */}
-      <View style={[styles.toolbar, isRTL && styles.toolbarRTL]}>
-        {/* Transpose */}
-        <View style={styles.transposeRow}>
-          <TouchableOpacity
-            style={[styles.transposeBtn, semitones <= -6 && styles.transposeBtnDisabled]}
-            onPress={() => handleTranspose(-1)}
-            disabled={semitones <= -6}
-          >
-            <Text style={styles.transposeBtnText}>−</Text>
-          </TouchableOpacity>
-          <Text style={styles.transposeLabel}>
-            {t('transpose')} {semitones > 0 ? `+${semitones}` : semitones}
-          </Text>
-          <TouchableOpacity
-            style={[styles.transposeBtn, semitones >= 6 && styles.transposeBtnDisabled]}
-            onPress={() => handleTranspose(1)}
-            disabled={semitones >= 6}
-          >
-            <Text style={styles.transposeBtnText}>+</Text>
-          </TouchableOpacity>
-        </View>
+      {/* ── Chord sheet ── */}
+      <ChordDisplay
+        data={displayData}
+        scrollRef={scrollRef}
+        onScroll={(y) => { scrollOffset.current = y; }}
+      />
 
-        {/* Auto-scroll + speed controls */}
-        <View style={styles.autoScrollGroup}>
-          <TouchableOpacity
-            style={[styles.autoScrollBtn, autoScroll && styles.autoScrollBtnActive]}
-            onPress={() => setAutoScroll((v) => !v)}
-          >
-            <Text style={[styles.autoScrollText, autoScroll && styles.autoScrollTextActive]}>
-              {t('auto_scroll')}
-            </Text>
-          </TouchableOpacity>
-          {autoScroll && (
-            <View style={styles.speedRow}>
-              <TouchableOpacity
-                style={[styles.speedBtn, scrollSpeed <= 1 && styles.transposeBtnDisabled]}
-                onPress={() => setScrollSpeed((v) => Math.max(1, v - 1))}
-                disabled={scrollSpeed <= 1}
-              >
-                <Text style={styles.transposeBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.speedLabel}>{SPEED_LABELS[scrollSpeed]}</Text>
-              <TouchableOpacity
-                style={[styles.speedBtn, scrollSpeed >= 5 && styles.transposeBtnDisabled]}
-                onPress={() => setScrollSpeed((v) => Math.min(5, v + 1))}
-                disabled={scrollSpeed >= 5}
-              >
-                <Text style={styles.transposeBtnText}>+</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* ── Chord display OR Edit mode ── */}
-      {editMode ? (
-        <ScrollView style={styles.editScroll} contentContainerStyle={styles.editContent}>
-          {editedLines.map((line, i) => (
-            <View key={i} style={styles.editRow}>
-              <View style={[styles.editTypeBadge, (styles[`editType_${line.type}` as keyof typeof styles] ?? styles.editType_lyrics) as object]}>
-                <Text style={styles.editTypeText}>
-                  {line.type === 'chords' ? '♩' : line.type === 'section' ? '§' : '♪'}
-                </Text>
-              </View>
-              <TextInput
-                style={[styles.editInput, isRTL && styles.editInputRTL]}
-                value={line.content}
-                onChangeText={(v) => handleEditLine(i, v)}
-                textAlign={isRTL ? 'right' : 'left'}
-                multiline={false}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          ))}
-        </ScrollView>
-      ) : (
-        <ChordDisplay
-          ref={scrollRef}
-          data={song.chords_data}
-          semitones={semitones}
-          fontSize={16}
-        />
-      )}
-
-      {/* ── Playlist modal ── */}
+      {/* ── Add-to-playlist modal ── */}
       <Modal
-        visible={showPlaylistModal}
+        visible={playlistModal}
         transparent
-        animationType="slide"
-        onRequestClose={() => setShowPlaylistModal(false)}
+        animationType="fade"
+        onRequestClose={() => setPlaylistModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowPlaylistModal(false)}
-        >
-          <View style={styles.modalSheet}>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
             <Text style={[styles.modalTitle, isRTL && styles.textRTL]}>
-              {t('select_playlist')}
+              {t('add_to_playlist_title')}
             </Text>
 
-            {playlistLoading ? (
-              <ActivityIndicator size="large" color="#4285F4" style={{ marginVertical: 20 }} />
+            {playlists.length === 0 ? (
+              <Text style={[styles.emptyText, isRTL && styles.textRTL]}>
+                {t('no_playlists')}
+              </Text>
             ) : (
-              <ScrollView style={styles.modalList} bounces={false}>
-                {playlists.map((pl) => (
+              <FlatList
+                data={playlists}
+                keyExtractor={(p) => p.id}
+                style={styles.playlistList}
+                renderItem={({ item }) => (
                   <TouchableOpacity
-                    key={pl.id}
                     style={[styles.playlistRow, isRTL && styles.playlistRowRTL]}
-                    onPress={() => handleSelectPlaylist(pl.id)}
+                    onPress={() => handleAddToPlaylist(item.id)}
+                    disabled={addingPlaylist}
                   >
                     <Text style={[styles.playlistName, isRTL && styles.textRTL]}>
-                      {pl.name}
+                      {item.name}
                     </Text>
+                    {addingPlaylist && <ActivityIndicator size="small" color="#4285F4" />}
                   </TouchableOpacity>
-                ))}
-
-                {/* Create new playlist */}
-                {!showNewInput ? (
-                  <TouchableOpacity
-                    style={[styles.playlistRow, styles.newPlaylistRow, isRTL && styles.playlistRowRTL]}
-                    onPress={() => setShowNewInput(true)}
-                  >
-                    <Text style={[styles.newPlaylistText, isRTL && styles.textRTL]}>
-                      + {t('create_playlist')}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={[styles.newPlaylistInput, isRTL && styles.newPlaylistInputRTL]}>
-                    <TextInput
-                      style={[styles.playlistNameInput, isRTL && styles.editInputRTL]}
-                      placeholder={t('playlist_name')}
-                      placeholderTextColor="#aaa"
-                      value={newPlaylistName}
-                      onChangeText={setNewPlaylistName}
-                      textAlign={isRTL ? 'right' : 'left'}
-                      autoFocus
-                    />
-                    <TouchableOpacity
-                      style={[styles.createBtn, !newPlaylistName.trim() && styles.searchBtnDisabled]}
-                      onPress={handleCreateAndAdd}
-                      disabled={!newPlaylistName.trim()}
-                    >
-                      <Text style={styles.createBtnText}>{t('create')}</Text>
-                    </TouchableOpacity>
-                  </View>
                 )}
-              </ScrollView>
+              />
             )}
 
             <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => setShowPlaylistModal(false)}
+              style={styles.modalCancelBtn}
+              onPress={() => setPlaylistModal(false)}
             >
-              <Text style={styles.modalCloseText}>{t('cancel')}</Text>
+              <Text style={styles.modalCancelText}>{t('cancel')}</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -636,34 +459,16 @@ export default function SongScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
+  safe: { flex: 1, backgroundColor: '#fff' },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
-    paddingHorizontal: 32,
+    gap: 12,
+    backgroundColor: '#fff',
   },
-  loadingText: {
-    color: '#888',
-    fontSize: 14,
-  },
-  errorText: {
-    color: '#cc3333',
-    fontSize: 15,
-    textAlign: 'center',
-  },
-  backBtn: {
-    marginTop: 8,
-    padding: 8,
-  },
-  backBtnText: {
-    color: '#4285F4',
-    fontSize: 15,
-  },
+  loadingText: { fontSize: 14, color: '#888' },
+  errorText:   { fontSize: 15, color: '#cc3333' },
 
   // Header
   header: {
@@ -675,290 +480,124 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
     gap: 8,
   },
-  headerRTL: {
-    flexDirection: 'row-reverse',
-  },
-  backArrow: {
-    fontSize: 22,
-    color: '#4285F4',
-    paddingHorizontal: 4,
-  },
-  headerText: {
-    flex: 1,
-    gap: 2,
-  },
-  songTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111',
-  },
-  songArtist: {
-    fontSize: 13,
-    color: '#666',
-  },
-  textRTL: {
-    writingDirection: 'rtl',
-    textAlign: 'right',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 4,
-    alignItems: 'center',
-  },
-  headerActionsRTL: {
-    flexDirection: 'row-reverse',
-  },
-  iconBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 36,
-    minHeight: 32,
-  },
-  iconBtnActive: {
+  headerRTL: { flexDirection: 'row-reverse' },
+
+  iconBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  iconBtnText: { fontSize: 22, color: '#4285F4' },
+
+  headerMeta:    { flex: 1, gap: 2 },
+  headerMetaRTL: { alignItems: 'flex-end' },
+
+  songTitle:  { fontSize: 15, fontWeight: '700', color: '#111' },
+  songArtist: { fontSize: 12, color: '#666' },
+
+  saveBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: '#4285F4',
+    borderRadius: 7,
   },
-  iconBtnDisabled: {
-    opacity: 0.5,
-  },
-  iconBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4285F4',
-  },
-  iconBtnTextActive: {
-    color: '#fff',
-  },
-  iconBtnEmoji: {
-    fontSize: 18,
-  },
+  saveBtnDisabled: { backgroundColor: '#aaa' },
+  saveBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
 
   // Toolbar
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
+    backgroundColor: '#f5f5f5',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e0e0e0',
-    backgroundColor: '#fafafa',
+    flexWrap: 'wrap',
+    gap: 6,
   },
-  toolbarRTL: {
-    flexDirection: 'row-reverse',
-  },
-  transposeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  transposeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e8eeff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  transposeBtnDisabled: {
-    backgroundColor: '#eee',
-  },
-  transposeBtnText: {
-    fontSize: 20,
-    color: '#4285F4',
-    lineHeight: 22,
-  },
-  transposeLabel: {
-    fontSize: 13,
-    color: '#555',
-    minWidth: 80,
-    textAlign: 'center',
-  },
-  autoScrollBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#e8eeff',
-  },
-  autoScrollBtnActive: {
-    backgroundColor: '#4285F4',
-  },
-  autoScrollText: {
-    fontSize: 13,
-    color: '#4285F4',
-    fontWeight: '600',
-  },
-  autoScrollTextActive: {
-    color: '#fff',
-  },
-  autoScrollGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  speedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  speedBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#e8eeff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  speedLabel: {
-    fontSize: 16,
-    minWidth: 22,
-    textAlign: 'center',
-  },
+  toolbarRTL: { flexDirection: 'row-reverse' },
 
-  // Edit mode
-  editScroll: {
-    flex: 1,
-  },
-  editContent: {
-    padding: 12,
-    gap: 4,
-  },
-  editRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  editTypeBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editType_chords: {
-    backgroundColor: '#e8eeff',
-  },
-  editType_lyrics: {
-    backgroundColor: '#f0f0f0',
-  },
-  editType_section: {
-    backgroundColor: '#fff3cd',
-  },
-  editTypeText: {
-    fontSize: 12,
-    color: '#555',
-  },
-  editInput: {
-    flex: 1,
-    height: 36,
+  transposeGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  toolbarRight:   { flexDirection: 'row', alignItems: 'center', gap: 4 },
+
+  toolBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    fontSize: 14,
-    backgroundColor: '#fafafa',
+    borderColor: '#4285F4',
+    backgroundColor: '#fff',
   },
-  editInputRTL: {
-    writingDirection: 'rtl',
+  toolBtnActive: { backgroundColor: '#4285F4' },
+  toolBtnText:   { fontSize: 12, color: '#4285F4', fontWeight: '600' },
+  toolBtnActiveText: { color: '#fff' },
+
+  toolBtnSmall: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    backgroundColor: '#fff',
+  },
+  toolBtnSmallText: { fontSize: 11, color: '#888' },
+
+  iconToolBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#4285F4',
+    backgroundColor: '#fff',
   },
 
-  // Playlist modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-    maxHeight: '70%',
-  },
-  modalTitle: {
-    fontSize: 17,
+  semitoneLabel: {
+    fontSize: 13,
     fontWeight: '700',
     color: '#111',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    minWidth: 28,
+    textAlign: 'center',
   },
-  modalList: {
-    maxHeight: 320,
+
+  backBtn:     { padding: 8 },
+  backBtnText: { fontSize: 22, color: '#4285F4' },
+
+  textRTL: { writingDirection: 'rtl', textAlign: 'right' },
+
+  // Playlist modal
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
   },
+  modal: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    gap: 14,
+    maxHeight: '70%',
+  },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: '#111' },
+  emptyText:  { fontSize: 14, color: '#888', textAlign: 'center', paddingVertical: 12 },
+  playlistList: { maxHeight: 240 },
   playlistRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    justifyContent: 'space-between',
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#eee',
   },
-  playlistRowRTL: {
-    flexDirection: 'row-reverse',
-  },
-  playlistName: {
-    fontSize: 16,
-    color: '#111',
-  },
-  newPlaylistRow: {
-    marginTop: 4,
-  },
-  newPlaylistText: {
-    fontSize: 15,
-    color: '#4285F4',
-    fontWeight: '500',
-  },
-  newPlaylistInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  newPlaylistInputRTL: {
-    flexDirection: 'row-reverse',
-  },
-  playlistNameInput: {
-    flex: 1,
-    height: 40,
+  playlistRowRTL: { flexDirection: 'row-reverse' },
+  playlistName:   { fontSize: 15, color: '#111' },
+  modalCancelBtn: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    fontSize: 15,
-    backgroundColor: '#f9f9f9',
   },
-  createBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    backgroundColor: '#4285F4',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchBtnDisabled: {
-    backgroundColor: '#aaa',
-  },
-  createBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  modalClose: {
-    marginTop: 12,
-    marginHorizontal: 20,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: '#f2f2f2',
-  },
-  modalCloseText: {
-    fontSize: 15,
-    color: '#555',
-    fontWeight: '500',
-  },
+  modalCancelText: { color: '#555', fontWeight: '500' },
 });

@@ -1,52 +1,47 @@
-/**
- * routes/chords.js
- *
- * REST API for fetching chord data.
- *
- * Endpoint:
- *   GET /chords?title=<title>&artist=<artist>&lang=<he|en>
- *
- * Flow:
- *  1. Validate query params.
- *  2. Delegate to chord_router (cache-first, then scrape).
- *  3. Return { chords_data, source, raw_url, from_cache }.
- */
+'use strict';
 
-const express = require('express');
-const { routeChords } = require('../services/chord_router');
+const { Router } = require('express');
+const { searchChords, getChordsById } = require('../services/chord_router');
 
-const router = express.Router();
+const router = Router();
 
 // ---------------------------------------------------------------------------
-// GET /chords
+// GET /api/chords/search?q=<query>&lang=he
 // ---------------------------------------------------------------------------
 
-router.get('/', async (req, res) => {
-  const { title, artist, lang, url, source } = req.query;
+router.get('/search', async (req, res) => {
+  const { q, lang = 'he' } = req.query;
 
-  if (!title) {
-    return res.status(400).json({ error: 'title query param is required' });
+  if (!q || !q.trim()) {
+    return res.status(400).json({ error: 'Missing query parameter: q' });
+  }
+  if (!['he', 'en'].includes(lang)) {
+    return res.status(400).json({ error: "lang must be 'he' or 'en'" });
   }
 
-  const language = lang === 'en' ? 'en' : 'he';
+  try {
+    const results = await searchChords(q.trim(), lang);
+    res.json(results);
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ error: 'Failed to search chords' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/chords/:id  — full chord data for one cached_chords row
+// ---------------------------------------------------------------------------
+
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
 
   try {
-    const result = await routeChords(
-      String(title).trim(),
-      artist ? String(artist).trim() : '',
-      language,
-      url    ? String(url).trim()    : null,
-      source ? String(source).trim() : null,
-    );
-
-    if (!result) {
-      return res.status(404).json({ error: 'No chord data found for this song' });
-    }
-
-    res.json(result);
+    const row = await getChordsById(id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
   } catch (err) {
-    console.error('[chords] Unexpected error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Chord fetch error:', err);
+    res.status(500).json({ error: 'Failed to fetch chords' });
   }
 });
 

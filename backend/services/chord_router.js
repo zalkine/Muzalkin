@@ -1,258 +1,174 @@
+'use strict';
+
 /**
  * chord_router.js
  *
- * Fetches and parses chord data for a given song.
+ * Cache-first chord fetcher. Always checks cached_chords before calling any
+ * scraper. After scraping, persists results so the same song is never fetched
+ * twice.
  *
- * Priority:
- *   Hebrew → Tab4U (Python cloudscraper, Cloudflare bypass)
- *   English → Ultimate Guitar → Tab4U
- *
- * When a direct source URL is provided (from search results), it is used
- * immediately instead of re-searching. This is the primary code path.
- *
- * Cache:
- *   All successful fetches are stored in Supabase `cached_chords` (7-day TTL).
- *   Cache is checked before any network request.
- *
- * ChordLine: { type: 'chords' | 'lyrics' | 'section', content: string }
+ * Priority order (from CLAUDE.md):
+ *   Hebrew  → Tab4U → Nagnu → Negina
+ *   English → Ultimate Guitar → Chordify → Tab4U
  */
 
-const { spawn } = require('child_process');
-const path      = require('path');
-
+const path          = require('path');
+const { spawnSync } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
-let _supabase = null;
-function getSupabase() {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_KEY ?? process.env.SUPABASE_KEY,
-    );
+// Service-role client — required for writing to cached_chords
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+);
+
+// ---------------------------------------------------------------------------
+// Cache helpers
+// ---------------------------------------------------------------------------
+
+async function searchCache(query, lang) {
+  const q = query.trim();
+  const { data, error } = await supabase
+    .from('cached_chords')
+    .select('id, song_title, artist, language, source, fetched_at')
+    .eq('language', lang)
+    .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
+    .order('fetched_at', { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error('Cache search error:', error.message);
+    return [];
   }
-  return _supabase;
+  return data || [];
 }
 
-const FETCH_CHORDS_PY = path.resolve(__dirname, '../../scraper/fetch_chords.py');
-const SEARCH_PY       = path.resolve(__dirname, '../../scraper/search.py');
+async function getCachedById(id) {
+  const { data, error } = await supabase
+    .from('cached_chords')
+    .select('*')
+    .eq('id', id)
+    .single();
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  if (error) return null;
+  return data;
+}
 
-// ---------------------------------------------------------------------------
-// Helpers: run Python scripts
-// ---------------------------------------------------------------------------
+async function saveToCache({ title, artist, lang, source, chordsData, url }) {
+  const { data, error } = await supabase
+    .from('cached_chords')
+    .insert({
+      song_title:  title,
+      artist:      artist,
+      language:    lang,
+      source,
+      chords_data: chordsData,
+      raw_url:     url,
+      expires_at:  null,
+    })
+    .select()
+    .single();
 
-function runPython(args) {
-  return new Promise((resolve) => {
-    const proc   = spawn('python3', args);
-    let stdout   = '';
-    let stderr   = '';
-
-    proc.stdout.on('data', (d) => { stdout += d.toString(); });
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
-
-    proc.on('close', (code) => {
-      if (stderr.trim()) {
-        stderr.trim().split('\n').forEach((l) => console.log('  [py]', l));
-      }
-      if (code !== 0) {
-        console.error('[runPython] exited with code', code);
-        return resolve(null);
-      }
-      try {
-        resolve(JSON.parse(stdout.trim()));
-      } catch (e) {
-        console.error('[runPython] JSON parse error:', e.message, '— stdout:', stdout.slice(0, 100));
-        resolve(null);
-      }
-    });
-
-    proc.on('error', (e) => {
-      console.error('[runPython] spawn error:', e.message);
-      resolve(null);
-    });
-  });
+  if (error) {
+    console.error('Cache write error:', error.message);
+    return null;
+  }
+  return data;
 }
 
 // ---------------------------------------------------------------------------
-// Fetch: Tab4U chord page directly by URL
+// Scrapers
 // ---------------------------------------------------------------------------
 
-async function fetchTab4uByUrl(url) {
-  console.log('[chord_router] fetching Tab4U by URL:', url);
-  const lines = await runPython([FETCH_CHORDS_PY, 'tab4u', url]);
-  if (!lines || lines.length === 0) return null;
-  return { chords_data: lines, raw_url: url };
-}
+// Scraper lives alongside the backend when deployed (backend/tab4u_scraper.py)
+// and in scraper/ when running from the repo root locally.
+const SCRAPER_DIR = path.join(__dirname, '..');
 
-// ---------------------------------------------------------------------------
-// Fetch: Tab4U by searching title+artist (fallback when no URL known)
-// ---------------------------------------------------------------------------
+function runPythonScraper(scriptName, args) {
+  const result = spawnSync(
+    'python3',
+    [path.join(SCRAPER_DIR, scriptName), ...args],
+    { encoding: 'utf-8', timeout: 30_000 },
+  );
 
-async function fetchTab4uBySearch(title, artist) {
-  console.log('[chord_router] searching Tab4U for:', title, artist);
-
-  const query = artist ? `${title} ${artist}` : title;
-  const results = await runPython([SEARCH_PY, 'tab4u', query]);
-  if (!results || results.length === 0) return null;
-
-  // Pick the best match
-  const url = results[0].url;
-  if (!url) return null;
-
-  await sleep(500);
-  return fetchTab4uByUrl(url);
-}
-
-// ---------------------------------------------------------------------------
-// Fetch: Ultimate Guitar by search (English)
-// ---------------------------------------------------------------------------
-
-async function fetchUltimateGuitar(title, artist) {
-  console.log('[chord_router] searching Ultimate Guitar for:', title, artist);
-
-  const query   = artist ? `${title} ${artist}` : title;
-  const results = await runPython([SEARCH_PY, 'ug', query]);
-  if (!results || results.length === 0) return null;
-
-  // UG search returns full tab content directly via the Python scraper
-  // (the search.py only returns search metadata, so we need the chord_router
-  //  to do its own UG scrape)
-  const axios   = require('axios');
-  const tabUrl  = results[0].url;
-  if (!tabUrl) return null;
+  if (result.error) {
+    console.error(`${scriptName} spawn error:`, result.error.message);
+    return null;
+  }
+  if (result.status !== 0) {
+    console.error(`${scriptName} stderr:`, result.stderr);
+    return null;
+  }
 
   try {
-    await sleep(1000);
-    const res = await axios.get(tabUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.ultimate-guitar.com/',
-      },
-      timeout: 10000,
-    });
-
-    const match = res.data.match(/class="js-store" data-content="([^"]+)"/);
-    if (!match) return null;
-
-    const store  = JSON.parse(match[1].replace(/&quot;/g, '"'));
-    const rawTab = store?.store?.page?.data?.tab_view?.wiki_tab?.content ?? '';
-    if (!rawTab) return null;
-
-    return { chords_data: parseUGContent(rawTab), raw_url: tabUrl };
-  } catch (err) {
-    console.error('[UG] chord fetch error:', err.message);
+    return JSON.parse(result.stdout);
+  } catch {
+    console.error(`${scriptName} returned invalid JSON`);
     return null;
   }
 }
 
-function parseUGContent(raw) {
-  const result = [];
-  for (const line of raw.split('\n')) {
-    const s = line.trim();
-    if (!s) continue;
-    if (/^\[(Verse|Chorus|Bridge|Intro|Outro|Pre-Chorus|Interlude)/.test(s)) {
-      result.push({ type: 'section', content: s.replace(/\[|\]/g, '') });
-    } else if (s.includes('[ch]')) {
-      const chords = s.replace(/\[ch\](.*?)\[\/ch\]/g, '$1').replace(/\[\/tab\]|\[tab\]/g, '').trim();
-      if (chords) result.push({ type: 'chords', content: chords });
-    } else {
-      const lyric = s.replace(/\[tab\]|\[\/tab\]/g, '').trim();
-      if (lyric) result.push({ type: 'lyrics', content: lyric });
-    }
-  }
-  return result;
+function runTab4UScraper(title, artist = '') {
+  const args = artist ? [title, artist] : [title];
+  return runPythonScraper('tab4u_scraper.py', args);
+}
+
+function runUltimateGuitarScraper(title, artist = '') {
+  const args = artist ? [title, artist] : [title];
+  return runPythonScraper('ultimate_guitar_scraper.py', args);
 }
 
 // ---------------------------------------------------------------------------
-// Supabase cache helpers
-// ---------------------------------------------------------------------------
-
-async function getCached(title, artist, lang) {
-  const { data } = await getSupabase()
-    .from('cached_chords')
-    .select('chords_data, raw_url, source')
-    .ilike('song_title', title)
-    .ilike('artist', artist)
-    .eq('language', lang)
-    .gt('expires_at', new Date().toISOString())
-    .limit(1)
-    .maybeSingle();
-  return data ?? null;
-}
-
-async function persistCache(title, artist, lang, source, chordsData, rawUrl) {
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await getSupabase().from('cached_chords').upsert({
-    song_title:  title,
-    artist,
-    language:    lang,
-    source,
-    chords_data: chordsData,
-    raw_url:     rawUrl,
-    fetched_at:  new Date().toISOString(),
-    expires_at:  expiresAt,
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Main export
+// Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch chords for a song.
- *
- * @param {string} title
- * @param {string} artist
- * @param {'he'|'en'} lang
- * @param {string|null} sourceUrl   - Direct URL from search result (preferred)
- * @param {string|null} source      - Source name: 'tab4u'|'negina'|'nagnu'|'ultimate_guitar'
+ * Search for songs. Cache-first; scrapes if nothing found.
+ * @returns {Array<{ id, song_title, artist, language, source }>}
  */
-async function routeChords(title, artist, lang = 'he', sourceUrl = null, source = null) {
-  // 1. Cache check
-  const cached = await getCached(title, artist, lang);
-  if (cached) {
-    console.log('[chord_router] cache hit for:', title);
-    return { ...cached, from_cache: true };
-  }
+async function searchChords(query, lang = 'he') {
+  const cached = await searchCache(query, lang);
+  if (cached.length > 0) return cached;
 
-  let result = null;
+  let scraped = null;
+  let source  = null;
 
-  // 2. If a direct URL was provided, use it first
-  if (sourceUrl) {
-    // For Tab4U URLs: fetch directly with Python cloudscraper
-    if (sourceUrl.includes('tab4u.com')) {
-      result = await fetchTab4uByUrl(sourceUrl);
-    }
-    // For Negina/Nagnu/unknown: we can't scrape their chord pages,
-    // so fall through to Tab4U search below
-    if (!result) {
-      console.log('[chord_router] direct URL fetch failed, falling back to Tab4U search');
-    }
-  }
+  if (lang === 'he') {
+    scraped = runTab4UScraper(query);
+    source  = 'tab4u';
+  } else {
+    // English: try Ultimate Guitar first
+    scraped = runUltimateGuitarScraper(query);
+    source  = 'ultimate_guitar';
 
-  // 3. Fallback: search Tab4U (or UG for English) by title+artist
-  if (!result) {
-    if (lang === 'en') {
-      result = await fetchUltimateGuitar(title, artist)
-            ?? await fetchTab4uBySearch(title, artist);
-    } else {
-      result = await fetchTab4uBySearch(title, artist);
+    // Fallback: try Tab4U English section
+    if (!scraped) {
+      scraped = runTab4UScraper(query);
+      source  = 'tab4u';
     }
   }
 
-  if (!result) {
-    console.log('[chord_router] no chords found for:', title);
-    return null;
-  }
+  if (!scraped) return [];
 
-  // 4. Persist to cache
-  const sourceName = source ?? (sourceUrl?.includes('tab4u') ? 'tab4u' : 'tab4u');
-  await persistCache(title, artist, lang, sourceName, result.chords_data, result.raw_url);
+  const row = await saveToCache({
+    title:      scraped.title,
+    artist:     scraped.artist,
+    lang,
+    source,
+    chordsData: scraped.chords_data,
+    url:        scraped.url,
+  });
 
-  return { ...result, source: sourceName, from_cache: false };
+  if (!row) return [];
+
+  return [{ id: row.id, song_title: row.song_title, artist: row.artist, language: row.language, source: row.source }];
 }
 
-module.exports = { routeChords };
+/**
+ * Return full chord data for a single cached row.
+ */
+async function getChordsById(id) {
+  return getCachedById(id);
+}
+
+module.exports = { searchChords, getChordsById };

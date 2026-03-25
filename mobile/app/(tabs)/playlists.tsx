@@ -13,11 +13,8 @@ import {
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { router } from 'expo-router';
 
 import { supabase } from '../../lib/supabase';
-
-const PRIMARY = '#5B4FE8';
 
 type Playlist = {
   id: string;
@@ -28,182 +25,157 @@ type Playlist = {
   song_count?: number;
 };
 
+type Status = 'loading' | 'done' | 'error';
+
 export default function PlaylistsScreen() {
-  const { t } = useTranslation();
-  const isRTL = I18nManager.isRTL;
+  const { t }  = useTranslation();
+  const isRTL  = I18nManager.isRTL;
 
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDesc, setNewDesc] = useState('');
+  const [status, setStatus]       = useState<Status>('loading');
+  const [modalVisible, setModal]  = useState(false);
+  const [newName, setNewName]     = useState('');
+  const [creating, setCreating]   = useState(false);
 
-  const fetchPlaylists = useCallback(async () => {
+  const loadPlaylists = useCallback(async () => {
+    setStatus('loading');
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    if (!user) { setStatus('error'); return; }
 
     const { data, error } = await supabase
       .from('playlists')
-      .select('id, name, description, is_public, created_at')
+      .select('id, name, description, is_public, created_at, playlist_songs(count)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      const withCounts = await Promise.all(
-        data.map(async (pl) => {
-          const { count } = await supabase
-            .from('playlist_songs')
-            .select('id', { count: 'exact', head: true })
-            .eq('playlist_id', pl.id);
-          return { ...pl, song_count: count ?? 0 };
-        }),
-      );
-      setPlaylists(withCounts);
-    }
-    setLoading(false);
+    if (error) { setStatus('error'); return; }
+
+    const mapped: Playlist[] = (data ?? []).map((p: any) => ({
+      id:         p.id,
+      name:       p.name,
+      description: p.description,
+      is_public:  p.is_public,
+      created_at: p.created_at,
+      song_count: p.playlist_songs?.[0]?.count ?? 0,
+    }));
+
+    setPlaylists(mapped);
+    setStatus('done');
   }, []);
 
-  useEffect(() => { fetchPlaylists(); }, [fetchPlaylists]);
+  useEffect(() => { loadPlaylists(); }, [loadPlaylists]);
 
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     setCreating(true);
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setCreating(false); return; }
 
     const { error } = await supabase.from('playlists').insert({
       user_id: user.id,
-      name: newName.trim(),
-      description: newDesc.trim() || null,
+      name:    newName.trim(),
       is_public: false,
     });
+
     setCreating(false);
-    setModalVisible(false);
+    setModal(false);
     setNewName('');
-    setNewDesc('');
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      fetchPlaylists();
-    }
-  }, [newName, newDesc, fetchPlaylists]);
 
-  const handleDelete = useCallback(
-    (id: string, name: string) => {
-      Alert.alert(name, 'Delete this playlist?', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.from('playlists').delete().eq('id', id);
-            fetchPlaylists();
-          },
-        },
-      ]);
-    },
-    [fetchPlaylists],
+    if (error) { Alert.alert(t('save_error')); } else { loadPlaylists(); }
+  }, [newName, loadPlaylists, t]);
+
+  const renderPlaylist = ({ item }: { item: Playlist }) => (
+    <View style={[styles.card, isRTL && styles.cardRTL]}>
+      <View style={styles.cardText}>
+        <Text style={[styles.cardName, isRTL && styles.textRTL]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={[styles.cardCount, isRTL && styles.textRTL]}>
+          {t(item.song_count === 1 ? 'songs_count_one' : 'songs_count_other', {
+            count: item.song_count ?? 0,
+          })}
+        </Text>
+      </View>
+      <Text style={styles.chevron}>{isRTL ? '\u2039' : '\u203a'}</Text>
+    </View>
   );
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>{t('playlists')}</Text>
-        </View>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={PRIMARY} />
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.safe}>
-
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={[styles.headerRow, isRTL && styles.headerRowRTL]}>
-          <Text style={[styles.headerTitle, isRTL && styles.textRTL]}>
-            {t('playlists')}
-          </Text>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
-            <Text style={styles.addBtnText}>+</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={[styles.titleRow, isRTL && styles.titleRowRTL]}>
+        <Text style={[styles.title, isRTL && styles.textRTL]}>{t('my_playlists')}</Text>
+        <TouchableOpacity style={styles.createBtn} onPress={() => setModal(true)}>
+          <Text style={styles.createBtnText}>+</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* ── Empty state ── */}
-      {playlists.length === 0 ? (
+      {status === 'loading' && (
         <View style={styles.center}>
-          <Text style={styles.emptyEmoji}>🎶</Text>
-          <Text style={[styles.emptyText, isRTL && styles.textRTL]}>
-            {t('no_results')}
-          </Text>
-          <TouchableOpacity style={styles.createFirstBtn} onPress={() => setModalVisible(true)}>
-            <Text style={styles.createFirstText}>+ {t('playlists')}</Text>
+          <ActivityIndicator size="large" color="#4285F4" />
+        </View>
+      )}
+
+      {status === 'error' && (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{t('error_load')}</Text>
+          <TouchableOpacity onPress={loadPlaylists}>
+            <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      )}
+
+      {status === 'done' && playlists.length === 0 && (
+        <View style={styles.center}>
+          <Text style={[styles.emptyText, isRTL && styles.textRTL]}>{t('no_playlists')}</Text>
+          <TouchableOpacity style={styles.createBtnLarge} onPress={() => setModal(true)}>
+            <Text style={styles.createBtnLargeText}>{t('create_playlist')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {status === 'done' && playlists.length > 0 && (
         <FlatList
           data={playlists}
           keyExtractor={(item) => item.id}
+          renderItem={renderPlaylist}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
-          renderItem={({ item }) => (
-            <PlaylistRow
-              playlist={item}
-              isRTL={isRTL}
-              onPress={() => router.push(`/playlist/${item.id}` as never)}
-              onDelete={() => handleDelete(item.id, item.name)}
-            />
-          )}
         />
       )}
 
-      {/* ── Create modal ── */}
       <Modal
         visible={modalVisible}
         transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
+        animationType="fade"
+        onRequestClose={() => setModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={[styles.modalTitle, isRTL && styles.textRTL]}>
-              פלייליסט חדש
-            </Text>
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <Text style={[styles.modalTitle, isRTL && styles.textRTL]}>{t('new_playlist')}</Text>
             <TextInput
-              style={[styles.input, isRTL && styles.inputRTL]}
-              placeholder={t('my_songs')}
+              style={[styles.modalInput, isRTL && styles.inputRTL]}
+              placeholder={t('playlist_name')}
+              placeholderTextColor="#aaa"
               value={newName}
               onChangeText={setNewName}
               autoFocus
               textAlign={isRTL ? 'right' : 'left'}
             />
-            <TextInput
-              style={[styles.input, styles.inputDesc, isRTL && styles.inputRTL]}
-              placeholder={t('share')}
-              value={newDesc}
-              onChangeText={setNewDesc}
-              multiline
-              numberOfLines={2}
-              textAlign={isRTL ? 'right' : 'left'}
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)}>
-                <Text style={styles.cancelBtnText}>ביטול</Text>
+            <View style={[styles.modalActions, isRTL && styles.modalActionsRTL]}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => { setModal(false); setNewName(''); }}
+              >
+                <Text style={styles.modalCancelText}>{t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.confirmBtn, !newName.trim() && styles.confirmBtnDisabled]}
+                style={[styles.modalCreateBtn, (!newName.trim() || creating) && styles.modalCreateBtnDisabled]}
                 onPress={handleCreate}
                 disabled={!newName.trim() || creating}
               >
-                {creating
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.confirmBtnText}>צור</Text>
-                }
+                <Text style={styles.modalCreateText}>{creating ? '...' : t('create')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -213,182 +185,103 @@ export default function PlaylistsScreen() {
   );
 }
 
-function PlaylistRow({
-  playlist,
-  isRTL,
-  onPress,
-  onDelete,
-}: {
-  playlist: Playlist;
-  isRTL: boolean;
-  onPress: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.card, isRTL && styles.cardRTL]}
-      onPress={onPress}
-      onLongPress={onDelete}
-      activeOpacity={0.7}
-    >
-      <View style={styles.cardIcon}>
-        <Text style={styles.cardIconText}>🎵</Text>
-      </View>
-      <View style={[styles.cardText, isRTL && styles.cardTextRTL]}>
-        <Text style={[styles.cardName, isRTL && styles.textRTL]} numberOfLines={1}>
-          {playlist.name}
-        </Text>
-        {playlist.description ? (
-          <Text style={[styles.cardDesc, isRTL && styles.textRTL]} numberOfLines={1}>
-            {playlist.description}
-          </Text>
-        ) : null}
-        <Text style={[styles.cardMeta, isRTL && styles.textRTL]}>
-          {playlist.song_count} שירים{playlist.is_public ? ' · ציבורי' : ''}
-        </Text>
-      </View>
-      <Text style={styles.chevron}>{isRTL ? '‹' : '›'}</Text>
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F4F3FF' },
-
-  header: {
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    shadowColor: PRIMARY,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  headerRow: {
+  safe: { flex: 1, backgroundColor: '#fff' },
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#e0e0e0',
   },
-  headerRowRTL: { flexDirection: 'row-reverse' },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  textRTL: { writingDirection: 'rtl', textAlign: 'right' },
-
-  addBtn: {
+  titleRowRTL: { flexDirection: 'row-reverse' },
+  title: { fontSize: 20, fontWeight: '700', color: '#111' },
+  createBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: '#4285F4',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addBtnText: { color: '#fff', fontSize: 24, lineHeight: 30, fontWeight: '300' },
-
+  createBtnText: { color: '#fff', fontSize: 20, lineHeight: 22 },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
+    gap: 14,
     paddingHorizontal: 32,
   },
-  emptyEmoji: { fontSize: 48 },
-  emptyText: { fontSize: 15, color: '#6B7280', textAlign: 'center' },
-  createFirstBtn: {
-    marginTop: 8,
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
+  emptyText: { fontSize: 15, color: '#888', textAlign: 'center' },
+  errorText: { fontSize: 15, color: '#cc3333' },
+  retryText: { fontSize: 15, color: '#4285F4', fontWeight: '600' },
+  createBtnLarge: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#4285F4',
+    borderRadius: 8,
   },
-  createFirstText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-
-  list: { padding: 16, gap: 8 },
-  separator: { height: 0 },
-
+  createBtnLargeText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  list: { paddingVertical: 4 },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 16,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
     paddingVertical: 14,
-    paddingHorizontal: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 16,
   },
   cardRTL: { flexDirection: 'row-reverse' },
-  cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F4F3FF',
+  cardText: { flex: 1, gap: 3 },
+  cardName: { fontSize: 16, fontWeight: '600', color: '#111' },
+  cardCount: { fontSize: 13, color: '#888' },
+  chevron: { fontSize: 20, color: '#bbb', marginHorizontal: 4 },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 32,
   },
-  cardIconText: { fontSize: 22 },
-  cardText: { flex: 1, gap: 2 },
-  cardTextRTL: { alignItems: 'flex-end' },
-  cardName: { fontSize: 15, fontWeight: '700', color: '#1A1A2E' },
-  cardDesc: { fontSize: 13, color: '#6B7280' },
-  cardMeta: { fontSize: 12, color: '#9CA3AF' },
-  chevron: { fontSize: 20, color: '#D1D5DB' },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
+  modal: {
+    width: '100%',
     backgroundColor: '#fff',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 28,
-    gap: 14,
+    borderRadius: 12,
+    padding: 20,
+    gap: 16,
   },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#1A1A2E', marginBottom: 4 },
-  input: {
+  modalTitle: { fontSize: 17, fontWeight: '700', color: '#111' },
+  modalInput: {
+    height: 44,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    backgroundColor: '#F9FAFB',
-    color: '#1A1A2E',
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
   },
-  inputDesc: { minHeight: 64, textAlignVertical: 'top' },
   inputRTL: { writingDirection: 'rtl' },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 4,
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  modalActionsRTL: { flexDirection: 'row-reverse' },
+  modalCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
   },
-  cancelBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+  modalCancelText: { color: '#555', fontWeight: '500' },
+  modalCreateBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#4285F4',
+    borderRadius: 8,
   },
-  cancelBtnText: { fontSize: 15, color: '#374151', fontWeight: '600' },
-  confirmBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    backgroundColor: PRIMARY,
-  },
-  confirmBtnDisabled: { opacity: 0.5 },
-  confirmBtnText: { fontSize: 15, color: '#fff', fontWeight: '700' },
+  modalCreateBtnDisabled: { backgroundColor: '#aaa' },
+  modalCreateText: { color: '#fff', fontWeight: '600' },
+  textRTL: { writingDirection: 'rtl', textAlign: 'right' },
 });
