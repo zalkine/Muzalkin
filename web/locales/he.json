@@ -50,5 +50,7 @@
   "retry": "נסה שנית",
   "no_saved_songs": "אין עדיין שירים שמורים. חפש ושמור שיר קודם.",
   "remove_from_playlist": "הסר",
-  "saving": "שומר…"
+  "saving": "שומר…",
+  "font_size_increase": "א+",
+  "font_size_decrease": "א−"
 }

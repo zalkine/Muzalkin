@@ -50,5 +50,7 @@
   "retry": "Retry",
   "no_saved_songs": "No saved songs yet. Search and save a song first.",
   "remove_from_playlist": "Remove",
-  "saving": "Saving…"
+  "saving": "Saving…",
+  "font_size_increase": "A+",
+  "font_size_decrease": "A−"
 }

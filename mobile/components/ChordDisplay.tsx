@@ -15,13 +15,19 @@ type Props = {
   scrollRef?: React.RefObject<ScrollView>;
   /** Called with the current Y offset whenever the user scrolls manually */
   onScroll?: (y: number) => void;
+  /** Font size multiplier — default 1.0 */
+  fontSize?: number;
 };
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ChordDisplay({ data, scrollRef, onScroll }: Props) {
+const BASE_CHORD_SIZE  = 14;
+const BASE_LYRICS_SIZE = 16;
+const BASE_SECTION_SIZE = 13;
+
+export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0 }: Props) {
   const isRTL = I18nManager.isRTL;
 
   return (
@@ -42,7 +48,7 @@ export default function ChordDisplay({ data, scrollRef, onScroll }: Props) {
           case 'section':
             return (
               <View key={index} style={styles.sectionRow}>
-                <Text style={[styles.sectionText, isRTL && styles.textRTL]}>
+                <Text style={[styles.sectionText, { fontSize: BASE_SECTION_SIZE * fontSize }, isRTL && styles.textRTL]}>
                   {line.content}
                 </Text>
               </View>
@@ -52,7 +58,7 @@ export default function ChordDisplay({ data, scrollRef, onScroll }: Props) {
             return (
               <View key={index} style={styles.chordsRow}>
                 <Text
-                  style={[styles.chordsText, isRTL && styles.textRTL]}
+                  style={[styles.chordsText, { fontSize: BASE_CHORD_SIZE * fontSize, lineHeight: BASE_CHORD_SIZE * fontSize * 1.45 }, isRTL && styles.textRTL]}
                   selectable
                 >
                   {line.content}
@@ -64,7 +70,7 @@ export default function ChordDisplay({ data, scrollRef, onScroll }: Props) {
             return (
               <View key={index} style={styles.lyricsRow}>
                 <Text
-                  style={[styles.lyricsText, isRTL && styles.textRTL]}
+                  style={[styles.lyricsText, { fontSize: BASE_LYRICS_SIZE * fontSize, lineHeight: BASE_LYRICS_SIZE * fontSize * 1.5 }, isRTL && styles.textRTL]}
                   selectable
                 >
                   {line.content}

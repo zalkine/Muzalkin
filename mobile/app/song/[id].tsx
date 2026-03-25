@@ -92,7 +92,7 @@ const SCROLL_SPEEDS = [0.5, 1, 1.5, 2.5, 4]; // px per 50ms tick
 // Screen
 // ---------------------------------------------------------------------------
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export default function SongDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -106,6 +106,10 @@ export default function SongDetailScreen() {
 
   // Transpose
   const [semitones, setSemitones] = useState(0);
+
+  // Font size (multiplier: 0.75 → 1.5)
+  const FONT_SIZES = [0.75, 0.875, 1.0, 1.25, 1.5];
+  const [fontIdx, setFontIdx] = useState(2); // default = 1.0×
 
   // Auto-scroll
   const scrollRef    = useRef<ScrollView>(null);
@@ -240,9 +244,33 @@ export default function SongDetailScreen() {
   // ---------------------------------------------------------------------------
 
   const openPlaylistModal = useCallback(async () => {
-    if (!savedId) {
-      Alert.alert(t('save_song'), t('no_saved_songs'));
-      return;
+    // Auto-save first if not yet saved
+    let currentSavedId = savedId;
+    if (!currentSavedId && song) {
+      try {
+        setSaving(true);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+
+        const resp = await fetch(`${BACKEND_URL}/api/songs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ cached_chord_id: song.id }),
+        });
+
+        if (!resp.ok) throw new Error('Save failed');
+        const saved = await resp.json();
+        currentSavedId = saved.id;
+        setSavedId(saved.id);
+      } catch {
+        Alert.alert(t('save_error'));
+        return;
+      } finally {
+        setSaving(false);
+      }
     }
 
     // Load playlists
@@ -257,7 +285,7 @@ export default function SongDetailScreen() {
 
     setPlaylists((data ?? []) as Playlist[]);
     setPlaylistModal(true);
-  }, [savedId, t]);
+  }, [savedId, song, t]);
 
   const handleAddToPlaylist = useCallback(async (playlistId: string) => {
     if (!savedId) return;
@@ -366,6 +394,22 @@ export default function SongDetailScreen() {
         </View>
 
         <View style={styles.toolbarRight}>
+          {/* Font size controls */}
+          <TouchableOpacity
+            style={[styles.toolBtn, fontIdx === 0 && styles.toolBtnDisabled]}
+            onPress={() => setFontIdx((i) => Math.max(0, i - 1))}
+            disabled={fontIdx === 0}
+          >
+            <Text style={styles.toolBtnText}>{t('font_size_decrease')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toolBtn, fontIdx === FONT_SIZES.length - 1 && styles.toolBtnDisabled]}
+            onPress={() => setFontIdx((i) => Math.min(FONT_SIZES.length - 1, i + 1))}
+            disabled={fontIdx === FONT_SIZES.length - 1}
+          >
+            <Text style={styles.toolBtnText}>{t('font_size_increase')}</Text>
+          </TouchableOpacity>
+
           {/* Auto-scroll speed (only shown when scrolling) */}
           {scrolling && (
             <TouchableOpacity style={styles.toolBtn} onPress={cycleSpeed}>
@@ -392,7 +436,7 @@ export default function SongDetailScreen() {
 
           {/* Add to playlist */}
           <TouchableOpacity style={styles.iconToolBtn} onPress={openPlaylistModal}>
-            <Text style={styles.toolBtnText}>+PL</Text>
+            <Text style={styles.toolBtnText}>{t('add_to_playlist')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -402,6 +446,7 @@ export default function SongDetailScreen() {
         data={displayData}
         scrollRef={scrollRef}
         onScroll={(y) => { scrollOffset.current = y; }}
+        fontSize={FONT_SIZES[fontIdx]}
       />
 
       {/* ── Add-to-playlist modal ── */}
@@ -526,7 +571,8 @@ const styles = StyleSheet.create({
     borderColor: '#4285F4',
     backgroundColor: '#fff',
   },
-  toolBtnActive: { backgroundColor: '#4285F4' },
+  toolBtnActive:    { backgroundColor: '#4285F4' },
+  toolBtnDisabled:  { borderColor: '#ccc', opacity: 0.4 },
   toolBtnText:   { fontSize: 12, color: '#4285F4', fontWeight: '600' },
   toolBtnActiveText: { color: '#fff' },
 
