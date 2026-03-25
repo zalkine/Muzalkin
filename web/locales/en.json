@@ -52,5 +52,6 @@
   "remove_from_playlist": "Remove",
   "saving": "Saving…",
   "font_size_increase": "A+",
-  "font_size_decrease": "A−"
+  "font_size_decrease": "A−",
+  "sign_in_to_see_playlists": "Sign in to create and view your playlists"
 }

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { supabase } from '../lib/supabase';
+import { useSession } from '../lib/SessionContext';
 import ChordDisplay, { ChordLine } from '../components/ChordDisplay';
 
 // ---------------------------------------------------------------------------
@@ -80,6 +81,7 @@ export default function SongDetailPage() {
   const { id }         = useParams<{ id: string }>();
   const navigate       = useNavigate();
   const { t, i18n }    = useTranslation();
+  const session        = useSession();
   const isRTL          = i18n.language === 'he';
 
   const [song,     setSong]     = useState<Song | null>(null);
@@ -124,11 +126,9 @@ export default function SongDetailPage() {
   // Save song
   const handleSave = useCallback(async () => {
     if (!song) return;
+    if (!session) { navigate('/login'); return; }
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
       const resp = await fetch(`${BACKEND_URL}/api/songs`, {
         method: 'POST',
         headers: {
@@ -189,8 +189,10 @@ export default function SongDetailPage() {
 
   // Add to playlist
   const openPlaylistModal = useCallback(async () => {
+    if (!session) { navigate('/login'); return; }
     if (!savedId) {
-      alert(t('no_saved_songs'));
+      // Auto-save first, then open modal
+      await handleSave();
       return;
     }
     const { data: { user } } = await supabase.auth.getUser();
@@ -202,15 +204,12 @@ export default function SongDetailPage() {
       .order('created_at', { ascending: false });
     setPlaylists((data ?? []) as Playlist[]);
     setShowPLModal(true);
-  }, [savedId, t]);
+  }, [savedId, session, navigate, handleSave, t]);
 
   const addToPlaylist = useCallback(async (playlistId: string) => {
-    if (!savedId) return;
+    if (!savedId || !session) return;
     setAddingPL(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
       const resp = await fetch(`${BACKEND_URL}/api/playlists/${playlistId}/songs`, {
         method: 'POST',
         headers: {

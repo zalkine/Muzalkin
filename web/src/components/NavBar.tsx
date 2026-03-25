@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { useSession } from '../lib/SessionContext';
+import { signOut } from '../lib/supabase';
 
 const NAV_ITEMS = [
   { to: '/search',    labelKey: 'search',    icon: '🔍' },
@@ -9,7 +11,17 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const { t, i18n } = useTranslation();
-  const isRTL = i18n.language === 'he';
+  const isRTL  = i18n.language === 'he';
+  const session = useSession();
+  const navigate = useNavigate();
+
+  const handleAuth = async () => {
+    if (session) {
+      await signOut();
+    } else {
+      navigate('/login');
+    }
+  };
 
   return (
     <nav style={{
@@ -40,6 +52,29 @@ export default function NavBar() {
           <span>{t(labelKey)}</span>
         </NavLink>
       ))}
+
+      {/* Sign in / Sign out */}
+      <button
+        onClick={handleAuth}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '10px 0',
+          gap: 3,
+          background: 'none',
+          border: 'none',
+          borderTop: '2px solid transparent',
+          cursor: 'pointer',
+          color: '#888',
+          fontSize: 11,
+        }}
+      >
+        <span style={{ fontSize: 20 }}>{session ? '👤' : '🔑'}</span>
+        <span>{session ? t('sign_out') : t('sign_in_google')}</span>
+      </button>
     </nav>
   );
 }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
+import { useSession } from '../lib/SessionContext';
 
 type Playlist = {
   id: string;
@@ -15,7 +17,24 @@ type Status = 'loading' | 'done' | 'error';
 
 export default function PlaylistsPage() {
   const { t, i18n } = useTranslation();
-  const isRTL = i18n.language === 'he';
+  const isRTL   = i18n.language === 'he';
+  const session = useSession();
+  const navigate = useNavigate();
+
+  if (!session) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16, padding: 24 }}>
+        <span style={{ fontSize: 48 }}>🎵</span>
+        <p style={{ fontSize: 16, color: '#555', textAlign: 'center' }}>{t('sign_in_to_see_playlists')}</p>
+        <button
+          onClick={() => navigate('/login')}
+          style={{ padding: '10px 24px', backgroundColor: '#4285F4', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
+        >
+          {t('sign_in_google')}
+        </button>
+      </div>
+    );
+  }
 
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [status,    setStatus]    = useState<Status>('loading');
