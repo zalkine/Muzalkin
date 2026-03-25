@@ -25,13 +25,21 @@ function getSupabase() {
   );
 }
 
+// Anon client for reads — works even if SERVICE_KEY is missing
+function getSupabaseAnon() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_ANON_KEY,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Cache helpers
 // ---------------------------------------------------------------------------
 
 async function searchCache(query, lang) {
   const q = query.trim();
-  const { data, error } = await getSupabase()
+  const { data, error } = await getSupabaseAnon()
     .from('cached_chords')
     .select('id, song_title, artist, language, source, fetched_at')
     .eq('language', lang)
@@ -47,7 +55,7 @@ async function searchCache(query, lang) {
 }
 
 async function getCachedById(id) {
-  const { data, error } = await getSupabase()
+  const { data, error } = await getSupabaseAnon()
     .from('cached_chords')
     .select('*')
     .eq('id', id)
