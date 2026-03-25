@@ -33,7 +33,7 @@ type Status = 'idle' | 'loading' | 'done' | 'error';
 
 async function fetchSearchResults(query: string): Promise<SearchResult[]> {
   const lang = i18next.language === 'he' ? 'he' : 'en';
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+  const backendUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
   const url = `${backendUrl}/api/chords/search?q=${encodeURIComponent(query.trim())}&lang=${lang}`;
 
   const resp = await fetch(url);

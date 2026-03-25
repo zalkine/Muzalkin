@@ -17,7 +17,7 @@ import { supabase, signOut } from '../../lib/supabase';
 type Instrument = 'guitar' | 'piano';
 type Language   = 'he' | 'en';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export default function SettingsScreen() {
   const { t, i18n } = useTranslation();
