@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 type SearchResult = { id: string; song_title: string; artist: string };
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND_URL = '';
 
 export default function SearchPage() {
   const { t, i18n } = useTranslation();

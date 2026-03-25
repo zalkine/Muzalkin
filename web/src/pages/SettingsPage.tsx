@@ -6,7 +6,7 @@ import { changeAppLanguage } from '../lib/i18n';
 type Instrument = 'guitar' | 'piano';
 type Language   = 'he' | 'en';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND_URL = '';
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();

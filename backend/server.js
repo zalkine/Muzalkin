@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 
+const path    = require('path');
 const express = require('express');
 const cors    = require('cors');
 
@@ -24,6 +25,15 @@ app.use('/api/songs',     songsRouter);
 app.use('/api/playlists', playlistsRouter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', version: '2.0.0' }));
+
+// Serve the built React web app
+const webDist = path.join(__dirname, 'public');
+app.use(express.static(webDist));
+
+// SPA fallback — send index.html for any non-API route
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(webDist, 'index.html'));
+});
 
 // Bind to 0.0.0.0 for Cloud Run / Railway compatibility
 app.listen(PORT, '0.0.0.0', () => {
