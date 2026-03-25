@@ -1,5 +1,6 @@
 mobile/
-web/
+web/node_modules/
+web/dist/
 .git/
 .env
 .env.*
