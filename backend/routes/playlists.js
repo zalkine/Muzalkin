@@ -10,15 +10,8 @@ const { createClient } = require('@supabase/supabase-js');
 
 const router = Router();
 
-const supabaseAnon = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY,
-);
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-);
+const getSupabaseAnon  = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+const getSupabaseAdmin = () => createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 // ---------------------------------------------------------------------------
 // Auth middleware
@@ -28,7 +21,7 @@ async function requireAuth(req, res, next) {
   const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
+  const { data: { user }, error } = await getSupabaseAnon().auth.getUser(token);
   if (error || !user) return res.status(401).json({ error: 'Invalid token' });
 
   req.user = user;

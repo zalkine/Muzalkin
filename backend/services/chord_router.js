@@ -17,10 +17,13 @@ const { spawnSync } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
 // Service-role client — required for writing to cached_chords
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-);
+// Deferred to avoid crashing at startup if env vars are not yet set
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Cache helpers
@@ -28,7 +31,7 @@ const supabase = createClient(
 
 async function searchCache(query, lang) {
   const q = query.trim();
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('cached_chords')
     .select('id, song_title, artist, language, source, fetched_at')
     .eq('language', lang)
@@ -44,7 +47,7 @@ async function searchCache(query, lang) {
 }
 
 async function getCachedById(id) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('cached_chords')
     .select('*')
     .eq('id', id)
@@ -55,7 +58,7 @@ async function getCachedById(id) {
 }
 
 async function saveToCache({ title, artist, lang, source, chordsData, url }) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('cached_chords')
     .insert({
       song_title:  title,
