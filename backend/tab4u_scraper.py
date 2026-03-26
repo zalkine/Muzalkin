@@ -11,7 +11,7 @@ Output (stdout): JSON object
     {
         "title":       "לאט לאט",
         "artist":      "עידן רייכל",
-        "url":         "https://www.tab4u.com/tab12345/",
+        "url":         "https://www.tab4u.com/tabs/songs/...",
         "chords_data": [
             { "type": "section", "content": "פזמון" },
             { "type": "chords",  "content": "Am  G  F  E" },
@@ -28,28 +28,25 @@ import json
 import re
 import sys
 import time
+from urllib.parse import quote, unquote
+from html import unescape
 
-import requests
+import cloudscraper
 from bs4 import BeautifulSoup
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "he,en;q=0.9",
-    "Referer": "https://www.tab4u.com/",
-}
+BASE_URL   = "https://www.tab4u.com"
+REQUEST_TIMEOUT       = 20  # seconds
+INTER_REQUEST_DELAY   = 1   # second — be polite to the server
 
-BASE_URL = "https://www.tab4u.com"
-SEARCH_URL = BASE_URL + "/tabs/songs/"
-REQUEST_TIMEOUT = 15  # seconds
-INTER_REQUEST_DELAY = 1  # second — be polite to the server
+
+def make_scraper():
+    return cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "windows", "mobile": False}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -61,84 +58,73 @@ def search_song(title: str, artist: str = "") -> list:
     Search Tab4U for a song. Returns a list of result dicts:
         [{ "title": str, "artist": str, "url": str }, ...]
     """
-    query = f"{title} {artist}".strip()
-    params = {"q": query}
+    query   = f"{title} {artist}".strip()
+    url     = f"{BASE_URL}/resultsSimple?tab=songs&q={quote(query)}"
+    scraper = make_scraper()
 
     try:
-        resp = requests.get(
-            SEARCH_URL, params=params, headers=HEADERS, timeout=REQUEST_TIMEOUT
-        )
-        resp.raise_for_status()
-    except requests.RequestException as exc:
+        res = scraper.get(url, timeout=REQUEST_TIMEOUT)
+    except Exception as exc:
         print(f"Search request failed: {exc}", file=sys.stderr)
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    results = []
+    if res.status_code != 200:
+        print(f"Search HTTP {res.status_code}", file=sys.stderr)
+        return []
 
-    # Tab4U search results: links whose href matches /tab<number>/
-    for link in soup.select("a[href^='/tab']"):
-        href = link.get("href", "")
-        if not re.match(r"^/tab\d+", href):
+    if "Just a moment" in res.text:
+        print("Cloudflare challenge not bypassed", file=sys.stderr)
+        return []
+
+    soup    = BeautifulSoup(res.text, "html.parser")
+    results = []
+    seen    = set()
+
+    for a in soup.find_all("a", href=re.compile(r"tabs/songs/")):
+        href = a.get("href", "")
+        if not href:
             continue
 
-        song_title = link.get_text(strip=True)
-        # Artist often lives in a sibling <span>
-        artist_tag = link.find_next("span", class_=re.compile(r"artist|singer", re.I))
-        if not artist_tag:
-            parent = link.parent
-            artist_tag = parent.find("span") if parent else None
-        found_artist = artist_tag.get_text(strip=True) if artist_tag else ""
+        song_title, song_artist = _parse_tab4u_href(href)
 
-        if song_title:
-            results.append(
-                {
-                    "title": song_title,
-                    "artist": found_artist,
-                    "url": BASE_URL + href,
-                }
-            )
+        if not song_title:
+            text = re.sub(r"\s+", " ", a.get_text()).strip()
+            if " / " in text:
+                parts      = text.split(" / ", 1)
+                song_title  = parts[0].strip()
+                song_artist = parts[1].strip()
+            else:
+                song_title = text
 
+        if not song_title:
+            continue
+
+        key = f"{song_title}|{song_artist}".lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        full_url = BASE_URL + "/" + href.lstrip("/")
+        results.append({"title": song_title, "artist": song_artist, "url": full_url})
+
+    print(f"Search found {len(results)} results", file=sys.stderr)
     return results
 
 
-# ---------------------------------------------------------------------------
-# Chord-line detection
-# ---------------------------------------------------------------------------
-
-def _is_chord_line(text: str) -> bool:
-    """
-    Heuristic: a line is a chord line when ≥60% of its tokens match
-    standard chord notation (e.g. Am, G, F#m, Dsus4, C/E).
-    """
-    if not text.strip():
-        return False
-
-    chord_pattern = re.compile(
-        r"^[A-G][#b]?(m|maj|min|sus[24]?|dim|aug|add\d+|[0-9])*(/[A-G][#b]?)?$"
-    )
-    tokens = text.split()
-    if not tokens:
-        return False
-
-    chord_count = sum(1 for t in tokens if chord_pattern.match(t))
-    return chord_count / len(tokens) >= 0.6
-
-
-def _classify_line(text: str) -> str:
-    """Return 'section', 'chords', 'lyrics', or 'empty'."""
-    stripped = text.strip()
-    if not stripped:
-        return "empty"
-    if re.match(r"^[\[\(].*[\]\)]$", stripped) or re.match(
-        r"^(פזמון|בית|גשר|קודה|אינטרו|סולו|סיום|chorus|verse|bridge|intro|outro)",
-        stripped,
-        re.IGNORECASE,
-    ):
-        return "section"
-    if _is_chord_line(stripped):
-        return "chords"
-    return "lyrics"
+def _parse_tab4u_href(href: str) -> tuple:
+    """Parse artist/title from  tabs/songs/ID_ARTIST_-_TITLE.html"""
+    try:
+        filename   = href.rstrip("/").rsplit("/", 1)[-1].replace(".html", "")
+        without_id = re.sub(r"^\d+_", "", filename)
+        decoded    = unescape(unquote(without_id.replace("_", " ")))
+        if " - " in decoded:
+            sep    = decoded.index(" - ")
+            artist = decoded[:sep].strip()
+            title  = decoded[sep + 3:].strip()
+            return title, artist
+        return decoded.strip(), ""
+    except Exception:
+        return "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -148,63 +134,110 @@ def _classify_line(text: str) -> str:
 def scrape_song_page(url: str) -> list:
     """
     Fetch a Tab4U song page and return the chords_data array.
-    Tries three strategies in order:
-      1. Structured div.song_line elements
-      2. <pre> block
-      3. Generic content div, line-by-line
+    Parses the #songContentTPL table structure.
     """
+    scraper = make_scraper()
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-    except requests.RequestException as exc:
+        res = scraper.get(url, timeout=REQUEST_TIMEOUT)
+        res.raise_for_status()
+    except Exception as exc:
         print(f"Song page request failed: {exc}", file=sys.stderr)
         return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    chords_data = []
+    if "Just a moment" in res.text:
+        print("Cloudflare challenge not bypassed on song page", file=sys.stderr)
+        return []
 
-    # Strategy 1: structured song_line divs
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    # Strategy 1: #songContentTPL table (current Tab4U structure)
+    tpl = soup.find(id="songContentTPL")
+    if tpl:
+        result = []
+        for row in tpl.find_all("tr"):
+            chord_cells = row.find_all("td", class_="chords")
+            if chord_cells:
+                parts = []
+                for cell in chord_cells:
+                    text = cell.get_text(separator=" ").replace("\xa0", " ").strip()
+                    text = re.sub(r"  +", "  ", text)
+                    if text:
+                        parts.append(text)
+                content = "  ".join(parts)
+                if content:
+                    result.append({"type": "chords", "content": content})
+                continue
+
+            tag_cells = row.find_all("td", class_=re.compile(r"\bsongTag\b|\btag\b", re.I))
+            if tag_cells:
+                text = tag_cells[0].get_text().strip()
+                if text:
+                    result.append({"type": "section", "content": text})
+                continue
+
+            song_cells = row.find_all("td", class_="song")
+            if song_cells:
+                text = song_cells[0].get_text(separator=" ").replace("\xa0", " ").strip()
+                if text:
+                    result.append({"type": "lyrics", "content": text})
+
+        if result:
+            return result
+
+    # Strategy 2: structured div.song_line elements
     song_lines = soup.select("div.song_line, div.songLine, div.tab-line")
     if song_lines:
+        result = []
         for line_div in song_lines:
-            chord_span = line_div.select_one(
-                "span.chord_line, span.chords, span.tab-chords"
-            )
-            lyric_span = line_div.select_one(
-                "span.lyric_line, span.lyrics, span.tab-lyrics"
-            )
+            chord_span = line_div.select_one("span.chord_line, span.chords, span.tab-chords")
+            lyric_span = line_div.select_one("span.lyric_line, span.lyrics, span.tab-lyrics")
             if chord_span:
                 content = chord_span.get_text()
                 if content.strip():
-                    chords_data.append({"type": "chords", "content": content.rstrip()})
+                    result.append({"type": "chords", "content": content.rstrip()})
             if lyric_span:
                 content = lyric_span.get_text()
                 if content.strip():
-                    chords_data.append({"type": "lyrics", "content": content.rstrip()})
-        if chords_data:
-            return chords_data
+                    result.append({"type": "lyrics", "content": content.rstrip()})
+        if result:
+            return result
 
-    # Strategy 2: <pre> block
+    # Strategy 3: <pre> block
     pre = soup.find("pre")
     if pre:
+        result = []
         for raw_line in pre.get_text().splitlines():
             kind = _classify_line(raw_line)
             if kind != "empty":
-                chords_data.append({"type": kind, "content": raw_line.rstrip()})
-        if chords_data:
-            return chords_data
+                result.append({"type": kind, "content": raw_line.rstrip()})
+        if result:
+            return result
 
-    # Strategy 3: generic content div
-    content_div = soup.select_one(
-        "div.song_content, div.songContent, div#song_content, div.tab_content"
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Chord-line detection (fallback classifier)
+# ---------------------------------------------------------------------------
+
+def _classify_line(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return "empty"
+    if re.match(r"^[\[\(].*[\]\)]$", stripped) or re.match(
+        r"^(פזמון|בית|גשר|קודה|אינטרו|סולו|סיום|chorus|verse|bridge|intro|outro)",
+        stripped, re.IGNORECASE,
+    ):
+        return "section"
+    chord_pattern = re.compile(
+        r"^[A-G][#b]?(m|maj|min|sus[24]?|dim|aug|add\d+|[0-9])*(/[A-G][#b]?)?$"
     )
-    if content_div:
-        for raw_line in content_div.get_text("\n").splitlines():
-            kind = _classify_line(raw_line)
-            if kind != "empty":
-                chords_data.append({"type": kind, "content": raw_line.rstrip()})
-
-    return chords_data
+    tokens = stripped.split()
+    if tokens:
+        chord_count = sum(1 for t in tokens if chord_pattern.match(t))
+        if chord_count / len(tokens) >= 0.6:
+            return "chords"
+    return "lyrics"
 
 
 # ---------------------------------------------------------------------------
@@ -212,12 +245,11 @@ def scrape_song_page(url: str) -> list:
 # ---------------------------------------------------------------------------
 
 def extract_song_meta(soup: BeautifulSoup, fallback_title: str, fallback_artist: str):
-    h1 = soup.find("h1")
+    h1    = soup.find("h1")
     title = h1.get_text(strip=True) if h1 else fallback_title
     artist_tag = soup.select_one("h2, span.artist_name, a.artist_link")
     artist = artist_tag.get_text(strip=True) if artist_tag else fallback_artist
 
-    # Strip site-appended suffixes like "— אקורדים"
     title = re.sub(r"\s*[-–|]\s*אקורדים.*$", "", title, flags=re.IGNORECASE).strip()
     title = re.sub(r"\s*[-–|]\s*chords.*$", "", title, flags=re.IGNORECASE).strip()
 
@@ -233,7 +265,7 @@ def main():
         print("Usage: tab4u_scraper.py <title> [artist]", file=sys.stderr)
         sys.exit(1)
 
-    title_arg = sys.argv[1]
+    title_arg  = sys.argv[1]
     artist_arg = sys.argv[2] if len(sys.argv) > 2 else ""
 
     results = search_song(title_arg, artist_arg)
@@ -241,7 +273,6 @@ def main():
         print(f"No results found for: {title_arg}", file=sys.stderr)
         sys.exit(1)
 
-    # Pick first result; prefer one where the artist matches
     best = results[0]
     if artist_arg:
         for r in results:
@@ -251,26 +282,25 @@ def main():
 
     time.sleep(INTER_REQUEST_DELAY)
 
-    song_url = best["url"]
+    song_url   = best["url"]
     chords_data = scrape_song_page(song_url)
 
     if not chords_data:
         print(f"Failed to parse chords from: {song_url}", file=sys.stderr)
         sys.exit(1)
 
-    # Re-fetch to extract clean metadata (page was already fetched inside scrape_song_page;
-    # a small refactor could avoid the double fetch, but keeping it simple for now)
+    scraper = make_scraper()
     try:
-        resp = requests.get(song_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        res  = scraper.get(song_url, timeout=REQUEST_TIMEOUT)
+        soup = BeautifulSoup(res.text, "html.parser")
         final_title, final_artist = extract_song_meta(soup, best["title"], best["artist"])
     except Exception:
         final_title, final_artist = best["title"], best["artist"]
 
     print(json.dumps({
-        "title": final_title,
-        "artist": final_artist,
-        "url": song_url,
+        "title":      final_title,
+        "artist":     final_artist,
+        "url":        song_url,
         "chords_data": chords_data,
     }, ensure_ascii=False))
 
