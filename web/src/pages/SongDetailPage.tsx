@@ -86,9 +86,10 @@ export default function SongDetailPage() {
   const [scrolling,    setScrolling]   = useState(false);
   const [speedIndex,   setSpeedIndex]  = useState(1);
 
-  const [playlists,   setPlaylists]   = useState<Playlist[]>([]);
-  const [showPLModal, setShowPLModal] = useState(false);
-  const [addingPL,    setAddingPL]    = useState(false);
+  const [playlists,          setPlaylists]          = useState<Playlist[]>([]);
+  const [showPLModal,        setShowPLModal]        = useState(false);
+  const [addingPL,           setAddingPL]           = useState(false);
+  const [currentSongIdForPL, setCurrentSongIdForPL] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -107,7 +108,7 @@ export default function SongDetailPage() {
     return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
   }, []);
 
-  const handleSave = useCallback(async (): Promise<string | null> => {
+  const handleSave = useCallback(async (silent = false): Promise<string | null> => {
     if (!song) return null;
     if (!session) { navigate('/login'); return null; }
     setSaving(true);
@@ -123,7 +124,7 @@ export default function SongDetailPage() {
       if (!resp.ok) throw new Error('Save failed');
       const saved = await resp.json();
       setSavedId(saved.id);
-      alert(t('saved'));
+      if (!silent) alert(t('saved'));
       return saved.id;
     } catch {
       alert(t('save_error'));
@@ -172,11 +173,10 @@ export default function SongDetailPage() {
 
   const openPlaylistModal = useCallback(async () => {
     if (!session) { navigate('/login'); return; }
-    let currentSavedId = savedId;
-    if (!currentSavedId) {
-      currentSavedId = await handleSave();
-      if (!currentSavedId) return; // save failed
-    }
+    // Save silently first if not yet saved, capture the id directly
+    const resolvedId = savedId ?? await handleSave(true);
+    if (!resolvedId) return;
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data } = await supabase
@@ -185,11 +185,12 @@ export default function SongDetailPage() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
     setPlaylists((data ?? []) as Playlist[]);
+    setCurrentSongIdForPL(resolvedId);
     setShowPLModal(true);
   }, [savedId, session, navigate, handleSave]);
 
   const addToPlaylist = useCallback(async (playlistId: string) => {
-    if (!savedId || !session) return;
+    if (!currentSongIdForPL || !session) return;
     setAddingPL(true);
     try {
       const resp = await fetch(`${BACKEND_URL}/api/playlists/${playlistId}/songs`, {
@@ -198,7 +199,7 @@ export default function SongDetailPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ song_id: savedId }),
+        body: JSON.stringify({ song_id: currentSongIdForPL }),
       });
       if (!resp.ok) throw new Error('Failed');
       setShowPLModal(false);
@@ -208,7 +209,7 @@ export default function SongDetailPage() {
     } finally {
       setAddingPL(false);
     }
-  }, [savedId, session, t]);
+  }, [currentSongIdForPL, session, t]);
 
   if (loading) {
     return (
