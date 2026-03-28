@@ -51,7 +51,7 @@ function applyTranspose(data: ChordLine[], semitones: number): ChordLine[] {
   );
 }
 
-const SCROLL_SPEEDS = [0.5, 1, 1.5, 2.5, 4];
+const SCROLL_SPEEDS = [0.2, 0.4, 0.6, 0.9, 1.4]; // px per 50ms tick ≈ 4–28 px/s
 
 type Song = {
   id: string;
@@ -143,10 +143,10 @@ export default function SongDetailPage() {
     }
   }, [scrolling, speedIndex]);
 
-  const cycleSpeed = useCallback(() => {
+  const adjustSpeed = useCallback((delta: number) => {
     if (scrollTimer.current) clearInterval(scrollTimer.current);
     scrollTimer.current = null;
-    const next = (speedIndex + 1) % SCROLL_SPEEDS.length;
+    const next = Math.max(0, Math.min(SCROLL_SPEEDS.length - 1, speedIndex + delta));
     setSpeedIndex(next);
     if (scrolling) {
       scrollTimer.current = setInterval(() => {
@@ -291,11 +291,23 @@ export default function SongDetailPage() {
 
         {/* Scroll + Share + Playlist */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {scrolling && (
-            <button style={toolBtnStyle} onClick={cycleSpeed}>
-              {`×${SCROLL_SPEEDS[speedIndex]}`}
-            </button>
-          )}
+          {/* Speed controls — always visible so user can set before starting */}
+          <button
+            style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
+            onClick={() => adjustSpeed(-1)}
+            disabled={speedIndex === 0}
+            title="Slower"
+          >−</button>
+          <span style={{ fontSize: 12, fontWeight: 700, minWidth: 32, textAlign: 'center', color: 'var(--text)' }}>
+            {`×${SCROLL_SPEEDS[speedIndex].toFixed(1)}`}
+          </span>
+          <button
+            style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
+            onClick={() => adjustSpeed(1)}
+            disabled={speedIndex === SCROLL_SPEEDS.length - 1}
+            title="Faster"
+          >+</button>
+
           <button
             style={{ ...toolBtnStyle, backgroundColor: scrolling ? 'var(--accent)' : 'var(--bg)', color: scrolling ? '#fff' : 'var(--accent)' }}
             onClick={toggleScroll}

@@ -80,7 +80,7 @@ def search_song(title: str, artist: str = "") -> list:
     results = []
     seen    = set()
 
-    for a in soup.find_all("a", href=re.compile(r"tabs/songs/")):
+    for a in soup.find_all("a", href=re.compile(r"tabs/songs/\d+")):
         href = a.get("href", "")
         if not href:
             continue
