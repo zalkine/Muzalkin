@@ -107,9 +107,9 @@ export default function SongDetailPage() {
     return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
   }, []);
 
-  const handleSave = useCallback(async () => {
-    if (!song) return;
-    if (!session) { navigate('/login'); return; }
+  const handleSave = useCallback(async (): Promise<string | null> => {
+    if (!song) return null;
+    if (!session) { navigate('/login'); return null; }
     setSaving(true);
     try {
       const resp = await fetch(`${BACKEND_URL}/api/songs`, {
@@ -124,8 +124,10 @@ export default function SongDetailPage() {
       const saved = await resp.json();
       setSavedId(saved.id);
       alert(t('saved'));
+      return saved.id;
     } catch {
       alert(t('save_error'));
+      return null;
     } finally {
       setSaving(false);
     }
@@ -170,9 +172,10 @@ export default function SongDetailPage() {
 
   const openPlaylistModal = useCallback(async () => {
     if (!session) { navigate('/login'); return; }
-    if (!savedId) {
-      await handleSave();
-      return;
+    let currentSavedId = savedId;
+    if (!currentSavedId) {
+      currentSavedId = await handleSave();
+      if (!currentSavedId) return; // save failed
     }
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;

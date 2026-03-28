@@ -33,7 +33,7 @@ async function requireAuth(req, res, next) {
 // ---------------------------------------------------------------------------
 
 router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, name, description, is_public, created_at, playlist_songs(count)')
     .eq('user_id', req.user.id)
@@ -65,7 +65,7 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing playlist name' });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('playlists')
     .insert({
       user_id:     req.user.id,
@@ -90,7 +90,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 router.get('/:id/songs', requireAuth, async (req, res) => {
   // Verify playlist belongs to user
-  const { data: playlist, error: plErr } = await supabaseAdmin
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
     .eq('id', req.params.id)
@@ -99,7 +99,7 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('playlist_songs')
     .select('id, position, added_at, songs(id, title, artist, language, instrument, transpose)')
     .eq('playlist_id', req.params.id)
@@ -123,7 +123,7 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   }
 
   // Verify playlist belongs to user
-  const { data: playlist, error: plErr } = await supabaseAdmin
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
     .eq('id', req.params.id)
@@ -133,7 +133,7 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
   // Verify song belongs to user
-  const { data: song, error: songErr } = await supabaseAdmin
+  const { data: song, error: songErr } = await getSupabaseAdmin()
     .from('songs')
     .select('id, user_id')
     .eq('id', song_id)
@@ -143,7 +143,7 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (song.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
   // Get current max position
-  const { data: posData } = await supabaseAdmin
+  const { data: posData } = await getSupabaseAdmin()
     .from('playlist_songs')
     .select('position')
     .eq('playlist_id', req.params.id)
@@ -152,7 +152,7 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
 
   const nextPosition = posData && posData.length > 0 ? (posData[0].position ?? 0) + 1 : 0;
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('playlist_songs')
     .insert({
       playlist_id: req.params.id,
@@ -176,7 +176,7 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
 
 router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
   // Verify playlist belongs to user
-  const { data: playlist, error: plErr } = await supabaseAdmin
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
     .eq('id', req.params.id)
@@ -185,7 +185,7 @@ router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  const { error } = await supabaseAdmin
+  const { error } = await getSupabaseAdmin()
     .from('playlist_songs')
     .delete()
     .eq('playlist_id', req.params.id)
