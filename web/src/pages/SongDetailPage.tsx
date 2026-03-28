@@ -59,11 +59,10 @@ type Song = {
   artist: string;
   language: string;
   chords_data: ChordLine[];
+  raw_url?: string;
 };
 
 type Playlist = { id: string; name: string };
-
-const BACKEND_URL = '';
 
 export default function SongDetailPage() {
   const { id }         = useParams<{ id: string }>();
@@ -113,20 +112,26 @@ export default function SongDetailPage() {
     if (!session) { navigate('/login'); return null; }
     setSaving(true);
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/songs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ cached_chord_id: song.id }),
-      });
-      if (!resp.ok) throw new Error('Save failed');
-      const saved = await resp.json();
+      const { data: saved, error } = await supabase
+        .from('songs')
+        .insert({
+          user_id:     session.user.id,
+          title:       song.song_title,
+          artist:      song.artist,
+          language:    song.language ?? 'he',
+          chords_data: song.chords_data,
+          source_url:  song.raw_url ?? null,
+          instrument:  'guitar',
+          transpose:   0,
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
       setSavedId(saved.id);
       if (!silent) alert(t('saved'));
       return saved.id;
-    } catch {
+    } catch (err) {
+      console.error('Save error:', err);
       alert(t('save_error'));
       return null;
     } finally {
@@ -173,16 +178,13 @@ export default function SongDetailPage() {
 
   const openPlaylistModal = useCallback(async () => {
     if (!session) { navigate('/login'); return; }
-    // Save silently first if not yet saved, capture the id directly
     const resolvedId = savedId ?? await handleSave(true);
     if (!resolvedId) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
     const { data } = await supabase
       .from('playlists')
       .select('id, name')
-      .eq('user_id', user.id)
+      .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
     setPlaylists((data ?? []) as Playlist[]);
     setCurrentSongIdForPL(resolvedId);
@@ -193,18 +195,27 @@ export default function SongDetailPage() {
     if (!currentSongIdForPL || !session) return;
     setAddingPL(true);
     try {
-      const resp = await fetch(`${BACKEND_URL}/api/playlists/${playlistId}/songs`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ song_id: currentSongIdForPL }),
-      });
-      if (!resp.ok) throw new Error('Failed');
+      // Get max position in this playlist
+      const { data: posData } = await supabase
+        .from('playlist_songs')
+        .select('position')
+        .eq('playlist_id', playlistId)
+        .order('position', { ascending: false })
+        .limit(1);
+      const nextPosition = posData && posData.length > 0 ? (posData[0].position ?? 0) + 1 : 0;
+
+      const { error } = await supabase
+        .from('playlist_songs')
+        .insert({
+          playlist_id: playlistId,
+          song_id:     currentSongIdForPL,
+          position:    nextPosition,
+        });
+      if (error) throw error;
       setShowPLModal(false);
       alert(t('playlist_added'));
-    } catch {
+    } catch (err) {
+      console.error('Playlist add error:', err);
       alert(t('playlist_add_error'));
     } finally {
       setAddingPL(false);
