@@ -246,12 +246,14 @@ def _parse_ug_content(content: str) -> list:
     # Remove [tab] / [/tab] wrappers
     content = re.sub(r"\[/?tab\]", "", content)
 
+    # Strip [ch]...[/ch] inline chord markers FIRST (keep the chord text)
+    # Must happen before the general [..] stripper below, otherwise
+    # [ch]Am[/ch] gets mangled to chAm/ch and never recognised as chords.
+    content = re.sub(r"\[ch\](.*?)\[/ch\]", r"\1", content)
+
     # Extract section markers like [Verse 1], [Chorus]
     # Replace them with the bare text on their own line
     content = re.sub(r"\[([^\]]+)\]", r"\1", content)
-
-    # Strip [ch]...[/ch] inline chord markers (keep the chord text)
-    content = re.sub(r"\[ch\](.*?)\[/ch\]", r"\1", content)
 
     chords_data = []
     for raw_line in content.splitlines():
