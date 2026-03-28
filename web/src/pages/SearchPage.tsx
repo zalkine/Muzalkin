@@ -40,7 +40,7 @@ export default function SearchPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
 
       {/* Search bar */}
       <div style={{
@@ -48,7 +48,8 @@ export default function SearchPage() {
         flexDirection: isRTL ? 'row-reverse' : 'row',
         padding: '12px 16px',
         gap: 8,
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: '1px solid var(--border)',
+        backgroundColor: 'var(--bg)',
       }}>
         <input
           ref={inputRef}
@@ -61,11 +62,12 @@ export default function SearchPage() {
           style={{
             flex: 1,
             height: 44,
-            border: '1px solid #ddd',
+            border: '1px solid var(--border)',
             borderRadius: 8,
             paddingInline: 12,
             fontSize: 16,
-            backgroundColor: '#f9f9f9',
+            backgroundColor: 'var(--input-bg)',
+            color: 'var(--text)',
             outline: 'none',
             textAlign: isRTL ? 'right' : 'left',
           }}
@@ -76,7 +78,7 @@ export default function SearchPage() {
           style={{
             height: 44,
             paddingInline: 18,
-            backgroundColor: (!query.trim() || status === 'loading') ? '#aaa' : '#4285F4',
+            backgroundColor: (!query.trim() || status === 'loading') ? '#aaa' : 'var(--accent)',
             color: '#fff',
             border: 'none',
             borderRadius: 8,
@@ -93,7 +95,7 @@ export default function SearchPage() {
 
         {status === 'idle' && (
           <div style={centerStyle}>
-            <p style={{ color: '#888', fontSize: 15, textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
+            <p style={{ color: 'var(--text3)', fontSize: 15, textAlign: 'center', direction: isRTL ? 'rtl' : 'ltr' }}>
               {t('search_hint')}
             </p>
           </div>
@@ -102,7 +104,7 @@ export default function SearchPage() {
         {status === 'loading' && (
           <div style={centerStyle}>
             <div style={spinnerStyle} />
-            <p style={{ color: '#888', fontSize: 14 }}>{t('loading')}</p>
+            <p style={{ color: 'var(--text3)', fontSize: 14 }}>{t('loading')}</p>
           </div>
         )}
 
@@ -111,7 +113,7 @@ export default function SearchPage() {
             <p style={{ color: '#cc3333', fontSize: 15 }}>{t('error_fetch')}</p>
             <button
               onClick={handleSearch}
-              style={{ color: '#4285F4', background: 'none', border: 'none', fontSize: 14, fontWeight: 600 }}
+              style={{ color: 'var(--accent)', background: 'none', border: 'none', fontSize: 14, fontWeight: 600 }}
             >
               {t('retry')}
             </button>
@@ -120,7 +122,7 @@ export default function SearchPage() {
 
         {status === 'done' && results.length === 0 && (
           <div style={centerStyle}>
-            <p style={{ color: '#888', fontSize: 15 }}>{t('no_results')}</p>
+            <p style={{ color: 'var(--text3)', fontSize: 15 }}>{t('no_results')}</p>
           </div>
         )}
 
@@ -138,18 +140,18 @@ export default function SearchPage() {
                     padding: '14px 16px',
                     background: 'none',
                     border: 'none',
-                    borderBottom: idx < results.length - 1 ? '1px solid #f0f0f0' : 'none',
+                    borderBottom: idx < results.length - 1 ? '1px solid var(--border2)' : 'none',
                     textAlign: isRTL ? 'right' : 'left',
                     cursor: 'pointer',
                   }}
                 >
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <span style={{ fontSize: 16, fontWeight: 600, color: '#111' }}>
+                    <span style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
                       {item.song_title}
                     </span>
-                    <span style={{ fontSize: 13, color: '#666' }}>{item.artist}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>{item.artist}</span>
                   </div>
-                  <span style={{ fontSize: 18, color: '#bbb' }}>{isRTL ? '‹' : '›'}</span>
+                  <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
                 </button>
               </li>
             ))}
@@ -173,8 +175,8 @@ const centerStyle: React.CSSProperties = {
 const spinnerStyle: React.CSSProperties = {
   width: 36,
   height: 36,
-  border: '3px solid #e0e0e0',
-  borderTopColor: '#4285F4',
+  border: '3px solid var(--border)',
+  borderTopColor: 'var(--accent)',
   borderRadius: '50%',
   animation: 'spin 0.8s linear infinite',
 };

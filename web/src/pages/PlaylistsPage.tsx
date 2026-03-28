@@ -25,10 +25,10 @@ export default function PlaylistsPage() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16, padding: 24 }}>
         <span style={{ fontSize: 48 }}>🎵</span>
-        <p style={{ fontSize: 16, color: '#555', textAlign: 'center' }}>{t('sign_in_to_see_playlists')}</p>
+        <p style={{ fontSize: 16, color: 'var(--text2)', textAlign: 'center' }}>{t('sign_in_to_see_playlists')}</p>
         <button
           onClick={() => navigate('/login')}
-          style={{ padding: '10px 24px', backgroundColor: '#4285F4', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
+          style={{ padding: '10px 24px', backgroundColor: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
         >
           {t('sign_in_google')}
         </button>
@@ -91,7 +91,7 @@ export default function PlaylistsPage() {
   }, [newName, loadPlaylists, t]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
 
       {/* Header */}
       <div style={{
@@ -100,16 +100,17 @@ export default function PlaylistsPage() {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '14px 16px',
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: '1px solid var(--border)',
+        backgroundColor: 'var(--bg)',
       }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#111', margin: 0 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
           {t('my_playlists')}
         </h2>
         <button
           onClick={() => setShowModal(true)}
           style={{
             width: 36, height: 36, borderRadius: 18,
-            backgroundColor: '#4285F4', border: 'none',
+            backgroundColor: 'var(--accent)', border: 'none',
             color: '#fff', fontSize: 22, lineHeight: '36px',
             cursor: 'pointer',
           }}
@@ -136,12 +137,12 @@ export default function PlaylistsPage() {
 
         {status === 'done' && playlists.length === 0 && (
           <div style={centerStyle}>
-            <p style={{ color: '#888', textAlign: 'center' }}>{t('no_playlists')}</p>
+            <p style={{ color: 'var(--text3)', textAlign: 'center' }}>{t('no_playlists')}</p>
             <button
               onClick={() => setShowModal(true)}
               style={{
                 paddingInline: 20, paddingBlock: 10,
-                backgroundColor: '#4285F4', color: '#fff',
+                backgroundColor: 'var(--accent)', color: '#fff',
                 border: 'none', borderRadius: 8, fontSize: 15,
                 fontWeight: 600, cursor: 'pointer',
               }}
@@ -159,17 +160,17 @@ export default function PlaylistsPage() {
                 flexDirection: isRTL ? 'row-reverse' : 'row',
                 alignItems: 'center',
                 padding: '14px 16px',
-                borderBottom: idx < playlists.length - 1 ? '1px solid #f0f0f0' : 'none',
+                borderBottom: idx < playlists.length - 1 ? '1px solid var(--border2)' : 'none',
               }}>
                 <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: '#111' }}>{pl.name}</div>
-                  <div style={{ fontSize: 13, color: '#888' }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{pl.name}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>
                     {t(pl.song_count === 1 ? 'songs_count_one' : 'songs_count_other', {
                       count: pl.song_count,
                     })}
                   </div>
                 </div>
-                <span style={{ fontSize: 18, color: '#bbb' }}>{isRTL ? '‹' : '›'}</span>
+                <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
               </li>
             ))}
           </ul>
@@ -179,8 +180,8 @@ export default function PlaylistsPage() {
       {/* Create playlist modal */}
       {showModal && (
         <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h3 style={{ margin: 0, textAlign: isRTL ? 'right' : 'left' }}>{t('new_playlist')}</h3>
+          <div style={{ ...modalStyle, backgroundColor: 'var(--card-bg)' }}>
+            <h3 style={{ margin: 0, textAlign: isRTL ? 'right' : 'left', color: 'var(--text)' }}>{t('new_playlist')}</h3>
             <input
               type="text"
               placeholder={t('playlist_name')}
@@ -190,8 +191,9 @@ export default function PlaylistsPage() {
               autoFocus
               dir={isRTL ? 'rtl' : 'ltr'}
               style={{
-                height: 44, border: '1px solid #ddd', borderRadius: 8,
+                height: 44, border: '1px solid var(--border)', borderRadius: 8,
                 paddingInline: 12, fontSize: 16, outline: 'none',
+                backgroundColor: 'var(--input-bg)', color: 'var(--text)',
                 textAlign: isRTL ? 'right' : 'left',
               }}
             />
@@ -205,8 +207,8 @@ export default function PlaylistsPage() {
                 onClick={() => { setShowModal(false); setNewName(''); }}
                 style={{
                   paddingInline: 14, paddingBlock: 8,
-                  border: '1px solid #ddd', borderRadius: 8,
-                  background: '#fff', fontSize: 14, cursor: 'pointer',
+                  border: '1px solid var(--border)', borderRadius: 8,
+                  background: 'var(--bg)', color: 'var(--text)', fontSize: 14, cursor: 'pointer',
                 }}
               >
                 {t('cancel')}
@@ -216,7 +218,7 @@ export default function PlaylistsPage() {
                 disabled={!newName.trim() || creating}
                 style={{
                   paddingInline: 14, paddingBlock: 8,
-                  backgroundColor: (!newName.trim() || creating) ? '#aaa' : '#4285F4',
+                  backgroundColor: (!newName.trim() || creating) ? '#aaa' : 'var(--accent)',
                   border: 'none', borderRadius: 8,
                   color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 }}
@@ -238,12 +240,12 @@ const centerStyle: React.CSSProperties = {
 
 const spinnerStyle: React.CSSProperties = {
   width: 36, height: 36,
-  border: '3px solid #e0e0e0', borderTopColor: '#4285F4',
+  border: '3px solid var(--border)', borderTopColor: 'var(--accent)',
   borderRadius: '50%', animation: 'spin 0.8s linear infinite',
 };
 
 const linkBtnStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#4285F4',
+  background: 'none', border: 'none', color: 'var(--accent)',
   fontSize: 14, fontWeight: 600, cursor: 'pointer',
 };
 
@@ -254,7 +256,7 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const modalStyle: React.CSSProperties = {
-  width: '100%', maxWidth: 400, backgroundColor: '#fff',
+  width: '100%', maxWidth: 400,
   borderRadius: 12, padding: 20, display: 'flex',
   flexDirection: 'column', gap: 16,
 };

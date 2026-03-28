@@ -7,7 +7,7 @@ import { useSession } from '../lib/SessionContext';
 import ChordDisplay, { ChordLine } from '../components/ChordDisplay';
 
 // ---------------------------------------------------------------------------
-// Chord transposition helpers (identical logic to mobile)
+// Chord transposition helpers
 // ---------------------------------------------------------------------------
 
 const CHROMATIC = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -51,15 +51,7 @@ function applyTranspose(data: ChordLine[], semitones: number): ChordLine[] {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Auto-scroll speeds
-// ---------------------------------------------------------------------------
-
-const SCROLL_SPEEDS = [0.5, 1, 1.5, 2.5, 4]; // px per 50ms
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+const SCROLL_SPEEDS = [0.5, 1, 1.5, 2.5, 4];
 
 type Song = {
   id: string;
@@ -73,10 +65,6 @@ type Playlist = { id: string; name: string };
 
 const BACKEND_URL = '';
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 export default function SongDetailPage() {
   const { id }         = useParams<{ id: string }>();
   const navigate       = useNavigate();
@@ -88,23 +76,18 @@ export default function SongDetailPage() {
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
   const [savedId,  setSavedId]  = useState<string | null>(null);
-
-  // Transpose
   const [semitones, setSemitones] = useState(0);
 
-  // Auto-scroll
   const scrollAreaRef  = useRef<HTMLDivElement>(null);
   const scrollOffset   = useRef(0);
   const scrollTimer    = useRef<ReturnType<typeof setInterval> | null>(null);
   const [scrolling,    setScrolling]   = useState(false);
   const [speedIndex,   setSpeedIndex]  = useState(1);
 
-  // Playlist modal
-  const [playlists,      setPlaylists]      = useState<Playlist[]>([]);
-  const [showPLModal,    setShowPLModal]    = useState(false);
-  const [addingPL,       setAddingPL]       = useState(false);
+  const [playlists,   setPlaylists]   = useState<Playlist[]>([]);
+  const [showPLModal, setShowPLModal] = useState(false);
+  const [addingPL,    setAddingPL]    = useState(false);
 
-  // Load song data
   useEffect(() => {
     if (!id) return;
     supabase
@@ -118,12 +101,10 @@ export default function SongDetailPage() {
       });
   }, [id]);
 
-  // Cleanup scroll timer
   useEffect(() => {
     return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
   }, []);
 
-  // Save song
   const handleSave = useCallback(async () => {
     if (!song) return;
     if (!session) { navigate('/login'); return; }
@@ -146,9 +127,8 @@ export default function SongDetailPage() {
     } finally {
       setSaving(false);
     }
-  }, [song, t]);
+  }, [song, session, navigate, t]);
 
-  // Auto-scroll
   const toggleScroll = useCallback(() => {
     if (scrolling) {
       if (scrollTimer.current) clearInterval(scrollTimer.current);
@@ -176,22 +156,19 @@ export default function SongDetailPage() {
     }
   }, [scrolling, speedIndex]);
 
-  // Share
   const handleShare = useCallback(() => {
     if (!song) return;
     const text = t('share_message', { title: song.song_title, artist: song.artist });
     if (navigator.share) {
-      navigator.share({ text }).catch(() => {/* user cancelled */});
+      navigator.share({ text }).catch(() => {});
     } else {
       navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard!'));
     }
   }, [song, t]);
 
-  // Add to playlist
   const openPlaylistModal = useCallback(async () => {
     if (!session) { navigate('/login'); return; }
     if (!savedId) {
-      // Auto-save first, then open modal
       await handleSave();
       return;
     }
@@ -204,7 +181,7 @@ export default function SongDetailPage() {
       .order('created_at', { ascending: false });
     setPlaylists((data ?? []) as Playlist[]);
     setShowPLModal(true);
-  }, [savedId, session, navigate, handleSave, t]);
+  }, [savedId, session, navigate, handleSave]);
 
   const addToPlaylist = useCallback(async (playlistId: string) => {
     if (!savedId || !session) return;
@@ -226,24 +203,20 @@ export default function SongDetailPage() {
     } finally {
       setAddingPL(false);
     }
-  }, [savedId, t]);
-
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  }, [savedId, session, t]);
 
   if (loading) {
     return (
-      <div style={{ ...centerStyle }}>
+      <div style={centerStyle}>
         <div style={spinnerStyle} />
-        <p style={{ color: '#888' }}>{t('loading')}</p>
+        <p style={{ color: 'var(--text3)' }}>{t('loading')}</p>
       </div>
     );
   }
 
   if (!song) {
     return (
-      <div style={{ ...centerStyle }}>
+      <div style={centerStyle}>
         <p style={{ color: '#cc3333' }}>{t('error_load')}</p>
         <button onClick={() => navigate(-1)} style={linkBtnStyle}>{t('retry')}</button>
       </div>
@@ -253,7 +226,7 @@ export default function SongDetailPage() {
   const displayData = applyTranspose(song.chords_data, semitones);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
 
       {/* Header */}
       <div style={{
@@ -261,16 +234,17 @@ export default function SongDetailPage() {
         flexDirection: isRTL ? 'row-reverse' : 'row',
         alignItems: 'center',
         padding: '10px 12px',
-        borderBottom: '1px solid #e0e0e0',
+        borderBottom: '1px solid var(--border)',
         gap: 8,
+        backgroundColor: 'var(--bg)',
       }}>
-        <button onClick={() => navigate(-1)} style={{ ...iconBtnStyle, fontSize: 22, color: '#4285F4' }}>
+        <button onClick={() => navigate(-1)} style={{ ...iconBtnStyle, fontSize: 22, color: 'var(--accent)' }}>
           {isRTL ? '→' : '←'}
         </button>
 
         <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>{song.song_title}</div>
-          <div style={{ fontSize: 12, color: '#666' }}>{song.artist}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{song.song_title}</div>
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>{song.artist}</div>
         </div>
 
         <button
@@ -278,7 +252,7 @@ export default function SongDetailPage() {
           disabled={saving}
           style={{
             ...saveBtnStyle,
-            backgroundColor: saving ? '#aaa' : '#4285F4',
+            backgroundColor: saving ? '#aaa' : 'var(--accent)',
           }}
         >
           {saving ? t('saving') : savedId ? '✓' : t('save_song')}
@@ -292,8 +266,8 @@ export default function SongDetailPage() {
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '8px 12px',
-        backgroundColor: '#f5f5f5',
-        borderBottom: '1px solid #e0e0e0',
+        backgroundColor: 'var(--surface)',
+        borderBottom: '1px solid var(--border)',
         flexWrap: 'wrap',
         gap: 6,
       }}>
@@ -302,14 +276,14 @@ export default function SongDetailPage() {
           <button style={toolBtnStyle} onClick={() => setSemitones((s) => Math.max(-11, s - 1))}>
             {t('transpose_down')}
           </button>
-          <span style={{ fontSize: 13, fontWeight: 700, minWidth: 28, textAlign: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, minWidth: 28, textAlign: 'center', color: 'var(--text)' }}>
             {semitones > 0 ? `+${semitones}` : `${semitones}`}
           </span>
           <button style={toolBtnStyle} onClick={() => setSemitones((s) => Math.min(11, s + 1))}>
             {t('transpose_up')}
           </button>
           {semitones !== 0 && (
-            <button style={{ ...toolBtnStyle, borderColor: '#ccc', color: '#888' }} onClick={() => setSemitones(0)}>
+            <button style={{ ...toolBtnStyle, borderColor: 'var(--border)', color: 'var(--text3)' }} onClick={() => setSemitones(0)}>
               {t('transpose_reset')}
             </button>
           )}
@@ -323,7 +297,7 @@ export default function SongDetailPage() {
             </button>
           )}
           <button
-            style={{ ...toolBtnStyle, backgroundColor: scrolling ? '#4285F4' : '#fff', color: scrolling ? '#fff' : '#4285F4' }}
+            style={{ ...toolBtnStyle, backgroundColor: scrolling ? 'var(--accent)' : 'var(--bg)', color: scrolling ? '#fff' : 'var(--accent)' }}
             onClick={toggleScroll}
           >
             {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
@@ -345,13 +319,13 @@ export default function SongDetailPage() {
       {/* Add-to-playlist modal */}
       {showPLModal && (
         <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h3 style={{ textAlign: isRTL ? 'right' : 'left', margin: 0 }}>
+          <div style={{ ...modalStyle, backgroundColor: 'var(--card-bg)' }}>
+            <h3 style={{ textAlign: isRTL ? 'right' : 'left', margin: 0, color: 'var(--text)' }}>
               {t('add_to_playlist_title')}
             </h3>
 
             {playlists.length === 0 ? (
-              <p style={{ color: '#888', textAlign: 'center' }}>{t('no_playlists')}</p>
+              <p style={{ color: 'var(--text3)', textAlign: 'center' }}>{t('no_playlists')}</p>
             ) : (
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 280, overflowY: 'auto' }}>
                 {playlists.map((pl) => (
@@ -364,11 +338,11 @@ export default function SongDetailPage() {
                         padding: '12px 0',
                         background: 'none',
                         border: 'none',
-                        borderBottom: '1px solid #eee',
+                        borderBottom: '1px solid var(--border2)',
                         fontSize: 15,
                         textAlign: isRTL ? 'right' : 'left',
                         cursor: 'pointer',
-                        color: '#111',
+                        color: 'var(--text)',
                       }}
                     >
                       {pl.name}
@@ -391,10 +365,6 @@ export default function SongDetailPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared inline styles
-// ---------------------------------------------------------------------------
-
 const centerStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', alignItems: 'center',
   justifyContent: 'center', height: '80vh', gap: 12,
@@ -402,7 +372,7 @@ const centerStyle: React.CSSProperties = {
 
 const spinnerStyle: React.CSSProperties = {
   width: 36, height: 36,
-  border: '3px solid #e0e0e0', borderTopColor: '#4285F4',
+  border: '3px solid var(--border)', borderTopColor: 'var(--accent)',
   borderRadius: '50%', animation: 'spin 0.8s linear infinite',
 };
 
@@ -411,7 +381,7 @@ const iconBtnStyle: React.CSSProperties = {
 };
 
 const linkBtnStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#4285F4', fontSize: 14,
+  background: 'none', border: 'none', color: 'var(--accent)', fontSize: 14,
   fontWeight: 600, cursor: 'pointer',
 };
 
@@ -422,8 +392,8 @@ const saveBtnStyle: React.CSSProperties = {
 
 const toolBtnStyle: React.CSSProperties = {
   paddingInline: 9, paddingBlock: 5, borderRadius: 6,
-  border: '1px solid #4285F4', backgroundColor: '#fff',
-  color: '#4285F4', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+  border: '1px solid var(--accent)', backgroundColor: 'var(--bg)',
+  color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
 };
 
 const overlayStyle: React.CSSProperties = {
@@ -432,7 +402,7 @@ const overlayStyle: React.CSSProperties = {
 };
 
 const modalStyle: React.CSSProperties = {
-  width: '100%', maxWidth: 400, backgroundColor: '#fff',
+  width: '100%', maxWidth: 400,
   borderRadius: 12, padding: 20, display: 'flex',
   flexDirection: 'column', gap: 14, maxHeight: '70vh',
 };

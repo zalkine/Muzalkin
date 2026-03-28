@@ -27,8 +27,8 @@ export default function NavBar() {
     <nav style={{
       display: 'flex',
       flexDirection: isRTL ? 'row-reverse' : 'row',
-      borderTop: '1px solid #e0e0e0',
-      backgroundColor: '#fff',
+      borderTop: '1px solid var(--border)',
+      backgroundColor: 'var(--bg)',
     }}>
       {NAV_ITEMS.map(({ to, labelKey, icon }) => (
         <NavLink
@@ -42,10 +42,10 @@ export default function NavBar() {
             justifyContent: 'center',
             padding: '10px 0',
             gap: 3,
-            color: isActive ? '#4285F4' : '#888',
+            color: isActive ? 'var(--accent)' : 'var(--text3)',
             fontSize: 11,
             fontWeight: isActive ? 700 : 400,
-            borderTop: isActive ? '2px solid #4285F4' : '2px solid transparent',
+            borderTop: isActive ? '2px solid var(--accent)' : '2px solid transparent',
           })}
         >
           <span style={{ fontSize: 20 }}>{icon}</span>
@@ -68,7 +68,7 @@ export default function NavBar() {
           border: 'none',
           borderTop: '2px solid transparent',
           cursor: 'pointer',
-          color: '#888',
+          color: 'var(--text3)',
           fontSize: 11,
         }}
       >
