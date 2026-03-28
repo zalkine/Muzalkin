@@ -1,7 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const { searchChords, getChordsById } = require('../services/chord_router');
+const { searchChords, fetchChordsForSong, getChordsById } = require('../services/chord_router');
 
 const router = Router();
 
@@ -25,6 +25,32 @@ router.get('/search', async (req, res) => {
   } catch (err) {
     console.error('Search error:', err);
     res.status(500).json({ error: 'Failed to search chords' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/chords/fetch  — scrape & cache chords for a specific song URL
+// Body: { url, title, artist, source, lang }
+// Returns: the full cached_chords row (with id)
+// ---------------------------------------------------------------------------
+
+router.post('/fetch', async (req, res) => {
+  const { url, title = '', artist = '', source, lang = 'he' } = req.body;
+
+  if (!url || !source) {
+    return res.status(400).json({ error: 'Missing url or source' });
+  }
+  if (!['he', 'en'].includes(lang)) {
+    return res.status(400).json({ error: "lang must be 'he' or 'en'" });
+  }
+
+  try {
+    const row = await fetchChordsForSong({ url, title, artist, source, lang });
+    if (!row) return res.status(502).json({ error: 'Failed to fetch chords from source' });
+    res.json(row);
+  } catch (err) {
+    console.error('Chord fetch error:', err);
+    res.status(500).json({ error: 'Internal error' });
   }
 });
 

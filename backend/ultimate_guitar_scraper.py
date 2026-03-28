@@ -270,19 +270,52 @@ def _parse_ug_content(content: str) -> list:
 # ---------------------------------------------------------------------------
 
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+
+    # --search-only: return JSON array of search results without scraping chords
+    if args and args[0] == "--search-only":
+        args = args[1:]
+        if not args:
+            print("Usage: ultimate_guitar_scraper.py --search-only <title> [artist]", file=sys.stderr)
+            sys.exit(1)
+        title_arg  = args[0]
+        artist_arg = args[1] if len(args) > 1 else ""
+        results = search_song(title_arg, artist_arg)
+        print(json.dumps(results, ensure_ascii=False))
+        return
+
+    # --url: scrape a specific tab URL (title/artist are optional metadata hints)
+    if args and args[0] == "--url":
+        if len(args) < 2:
+            print("Usage: ultimate_guitar_scraper.py --url <url> [title] [artist]", file=sys.stderr)
+            sys.exit(1)
+        tab_url         = args[1]
+        fallback_title  = args[2] if len(args) > 2 else ""
+        fallback_artist = args[3] if len(args) > 3 else ""
+        result = scrape_tab_page(tab_url)
+        if not result or not result.get("chords_data"):
+            print(f"Failed to parse chords from: {tab_url}", file=sys.stderr)
+            sys.exit(1)
+        if not result.get("title"):
+            result["title"] = fallback_title
+        if not result.get("artist"):
+            result["artist"] = fallback_artist
+        print(json.dumps(result, ensure_ascii=False))
+        return
+
+    # Default: search + auto-pick best result + scrape chords
+    if not args:
         print("Usage: ultimate_guitar_scraper.py <title> [artist]", file=sys.stderr)
         sys.exit(1)
 
-    title_arg = sys.argv[1]
-    artist_arg = sys.argv[2] if len(sys.argv) > 2 else ""
+    title_arg  = args[0]
+    artist_arg = args[1] if len(args) > 1 else ""
 
     results = search_song(title_arg, artist_arg)
     if not results:
         print(f"No UG results found for: {title_arg}", file=sys.stderr)
         sys.exit(1)
 
-    # Pick best match: prefer exact artist match if provided
     best = results[0]
     if artist_arg:
         for r in results:
@@ -298,7 +331,6 @@ def main():
         print(f"Failed to parse chords from: {best['url']}", file=sys.stderr)
         sys.exit(1)
 
-    # Fill metadata gaps with search result data
     if not result.get("title"):
         result["title"] = best["title"]
     if not result.get("artist"):

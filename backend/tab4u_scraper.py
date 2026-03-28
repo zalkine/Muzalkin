@@ -260,13 +260,61 @@ def extract_song_meta(soup: BeautifulSoup, fallback_title: str, fallback_artist:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def fetch_by_url(url: str, fallback_title: str = "", fallback_artist: str = "") -> dict:
+    """Scrape chords for a known song URL and return the full result dict."""
+    chords_data = scrape_song_page(url)
+    if not chords_data:
+        return {}
+    title, artist = _parse_tab4u_href(url)
+    final_title  = title  or fallback_title
+    final_artist = artist or fallback_artist
+    if not final_artist:
+        try:
+            resp2 = make_scraper().get(url, timeout=REQUEST_TIMEOUT)
+            soup2 = BeautifulSoup(resp2.text, "html.parser")
+            _, final_artist = extract_song_meta(soup2, final_title, fallback_artist)
+        except Exception:
+            pass
+    return {"title": final_title, "artist": final_artist, "url": url, "chords_data": chords_data}
+
+
 def main():
-    if len(sys.argv) < 2:
+    args = sys.argv[1:]
+
+    # --search-only: return JSON array of search results without scraping chords
+    if args and args[0] == "--search-only":
+        args = args[1:]
+        if not args:
+            print("Usage: tab4u_scraper.py --search-only <title> [artist]", file=sys.stderr)
+            sys.exit(1)
+        title_arg  = args[0]
+        artist_arg = args[1] if len(args) > 1 else ""
+        results = search_song(title_arg, artist_arg)
+        print(json.dumps(results, ensure_ascii=False))
+        return
+
+    # --url: scrape a specific song URL (title/artist are optional metadata hints)
+    if args and args[0] == "--url":
+        if len(args) < 2:
+            print("Usage: tab4u_scraper.py --url <url> [title] [artist]", file=sys.stderr)
+            sys.exit(1)
+        song_url       = args[1]
+        fallback_title  = args[2] if len(args) > 2 else ""
+        fallback_artist = args[3] if len(args) > 3 else ""
+        result = fetch_by_url(song_url, fallback_title, fallback_artist)
+        if not result:
+            print(f"Failed to scrape chords from: {song_url}", file=sys.stderr)
+            sys.exit(1)
+        print(json.dumps(result, ensure_ascii=False))
+        return
+
+    # Default: search + auto-pick best result + scrape chords
+    if not args:
         print("Usage: tab4u_scraper.py <title> [artist]", file=sys.stderr)
         sys.exit(1)
 
-    title_arg  = sys.argv[1]
-    artist_arg = sys.argv[2] if len(sys.argv) > 2 else ""
+    title_arg  = args[0]
+    artist_arg = args[1] if len(args) > 1 else ""
 
     results = search_song(title_arg, artist_arg)
     if not results:
@@ -282,30 +330,12 @@ def main():
 
     time.sleep(INTER_REQUEST_DELAY)
 
-    song_url   = best["url"]
-    chords_data = scrape_song_page(song_url)
-
-    if not chords_data:
-        print(f"Failed to parse chords from: {song_url}", file=sys.stderr)
+    result = fetch_by_url(best["url"], best["title"] or title_arg, best["artist"] or artist_arg)
+    if not result:
+        print(f"Failed to parse chords from: {best['url']}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        final_title  = best["title"]  or title_arg
-        final_artist = best["artist"] or artist_arg
-        # Try to get cleaner artist from the page only if URL parsing gave nothing
-        if not final_artist:
-            resp2 = make_scraper().get(song_url, timeout=REQUEST_TIMEOUT)
-            soup2 = BeautifulSoup(resp2.text, "html.parser")
-            _, final_artist = extract_song_meta(soup2, final_title, artist_arg)
-    except Exception:
-        final_title, final_artist = best["title"], best["artist"]
-
-    print(json.dumps({
-        "title":      final_title,
-        "artist":     final_artist,
-        "url":        song_url,
-        "chords_data": chords_data,
-    }, ensure_ascii=False))
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":
