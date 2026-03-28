@@ -289,11 +289,14 @@ def main():
         print(f"Failed to parse chords from: {song_url}", file=sys.stderr)
         sys.exit(1)
 
-    scraper = make_scraper()
     try:
-        res  = scraper.get(song_url, timeout=REQUEST_TIMEOUT)
-        soup = BeautifulSoup(res.text, "html.parser")
-        final_title, final_artist = extract_song_meta(soup, best["title"], best["artist"])
+        final_title  = best["title"]  or title_arg
+        final_artist = best["artist"] or artist_arg
+        # Try to get cleaner artist from the page only if URL parsing gave nothing
+        if not final_artist:
+            resp2 = make_scraper().get(song_url, timeout=REQUEST_TIMEOUT)
+            soup2 = BeautifulSoup(resp2.text, "html.parser")
+            _, final_artist = extract_song_meta(soup2, final_title, artist_arg)
     except Exception:
         final_title, final_artist = best["title"], best["artist"]
 
