@@ -40,7 +40,7 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing cached_chord_id' });
   }
 
-  const { data: cached, error: cacheErr } = await supabaseAdmin
+  const { data: cached, error: cacheErr } = await getSupabaseAdmin()
     .from('cached_chords')
     .select('*')
     .eq('id', cached_chord_id)
@@ -50,7 +50,7 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(404).json({ error: 'Cached chord not found' });
   }
 
-  const { data: song, error: insertErr } = await supabaseAdmin
+  const { data: song, error: insertErr } = await getSupabaseAdmin()
     .from('songs')
     .insert({
       user_id:     req.user.id,
@@ -78,7 +78,7 @@ router.post('/', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('songs')
     .select('id, title, artist, language, instrument, transpose, created_at')
     .eq('user_id', req.user.id)
@@ -94,7 +94,7 @@ router.get('/', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.delete('/:id', requireAuth, async (req, res) => {
-  const { error } = await supabaseAdmin
+  const { error } = await getSupabaseAdmin()
     .from('songs')
     .delete()
     .eq('id', req.params.id)
@@ -106,7 +106,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/songs/:id/transpose  — update semitone shift for a saved song
+// PATCH /api/songs/:id/transpose
 // Body: { transpose: number }
 // ---------------------------------------------------------------------------
 
@@ -117,7 +117,7 @@ router.patch('/:id/transpose', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'transpose must be an integer between -11 and 11' });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('songs')
     .update({ transpose })
     .eq('id', req.params.id)
@@ -132,7 +132,7 @@ router.patch('/:id/transpose', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// PATCH /api/users/preferences  — update language and/or instrument preference
+// PATCH /api/songs/preferences
 // Body: { language?: 'he'|'en', instrument?: 'guitar'|'piano' }
 // ---------------------------------------------------------------------------
 
@@ -158,7 +158,7 @@ router.patch('/preferences', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Nothing to update' });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await getSupabaseAdmin()
     .from('users')
     .update(updates)
     .eq('id', req.user.id)

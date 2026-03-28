@@ -77,6 +77,8 @@ export default function SongDetailPage() {
   const [saving,   setSaving]   = useState(false);
   const [savedId,  setSavedId]  = useState<string | null>(null);
   const [semitones, setSemitones] = useState(0);
+  const [fontSize,  setFontSize]  = useState(1.0);
+  const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8];
 
   const scrollAreaRef  = useRef<HTMLDivElement>(null);
   const scrollOffset   = useRef(0);
@@ -271,6 +273,20 @@ export default function SongDetailPage() {
         flexWrap: 'wrap',
         gap: 6,
       }}>
+        {/* Font size */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            style={{ ...toolBtnStyle, opacity: fontSize <= FONT_SIZES[0] ? 0.4 : 1 }}
+            onClick={() => setFontSize(s => FONT_SIZES[Math.max(0, FONT_SIZES.indexOf(s) - 1)])}
+            disabled={fontSize <= FONT_SIZES[0]}
+          >A−</button>
+          <button
+            style={{ ...toolBtnStyle, opacity: fontSize >= FONT_SIZES[FONT_SIZES.length - 1] ? 0.4 : 1 }}
+            onClick={() => setFontSize(s => FONT_SIZES[Math.min(FONT_SIZES.length - 1, FONT_SIZES.indexOf(s) + 1)])}
+            disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]}
+          >A+</button>
+        </div>
+
         {/* Transpose */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button style={toolBtnStyle} onClick={() => setSemitones((s) => Math.max(-11, s - 1))}>
@@ -325,7 +341,7 @@ export default function SongDetailPage() {
         style={{ flex: 1, overflowY: 'auto' }}
         onScroll={(e) => { scrollOffset.current = (e.target as HTMLDivElement).scrollTop; }}
       >
-        <ChordDisplay data={displayData} />
+        <ChordDisplay data={displayData} fontSize={fontSize} />
       </div>
 
       {/* Add-to-playlist modal */}

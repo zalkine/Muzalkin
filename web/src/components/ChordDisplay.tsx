@@ -8,9 +8,10 @@ export type ChordLine = {
 
 type Props = {
   data: ChordLine[];
+  fontSize?: number; // multiplier, default 1.0
 };
 
-const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data }, ref) => {
+const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data, fontSize = 1 }, ref) => {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === 'he';
 
@@ -29,9 +30,9 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data }, ref) => {
             return (
               <div key={i} style={{ marginTop: 20, marginBottom: 4 }}>
                 <span style={{
-                  fontSize: 12,
+                  fontSize: Math.round(12 * fontSize),
                   fontWeight: 700,
-                  color: '#555',
+                  color: 'var(--text2)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.8px',
                 }}>
@@ -45,10 +46,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data }, ref) => {
               <div key={i} style={{ marginTop: 10 }}>
                 <span style={{
                   fontFamily: 'monospace',
-                  fontSize: 14,
+                  fontSize: Math.round(14 * fontSize),
                   fontWeight: 700,
-                  color: '#1a6fd4',
-                  lineHeight: '20px',
+                  color: 'var(--accent)',
+                  lineHeight: `${Math.round(20 * fontSize)}px`,
                   whiteSpace: 'pre',
                 }}>
                   {line.content}
@@ -60,9 +61,9 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data }, ref) => {
             return (
               <div key={i} style={{ marginBottom: 2 }}>
                 <span style={{
-                  fontSize: 16,
-                  color: '#111',
-                  lineHeight: '24px',
+                  fontSize: Math.round(16 * fontSize),
+                  color: 'var(--text)',
+                  lineHeight: `${Math.round(26 * fontSize)}px`,
                   whiteSpace: 'pre-wrap',
                 }}>
                   {line.content}
