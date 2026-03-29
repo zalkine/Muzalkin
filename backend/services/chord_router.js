@@ -145,44 +145,57 @@ function fetchUGByUrl(url, title = '', artist = '') {
 
 /**
  * Search for songs. Returns up to 20 results.
- * Cache results are returned as { id, song_title, artist, language, source }.
- * Scraper results (cache miss) are returned as { song_title, artist, source, source_url }.
+ * Always runs both the cache lookup AND the scraper search, then merges them.
+ * Cache hits (with an id) come first; new scraper results follow.
+ * This ensures repeated searches for the same word always show the full list.
+ *
+ * Cache results: { id, song_title, artist, language, source }
+ * Scraper results: { song_title, artist, source, source_url, language }
  */
 async function searchChords(query, lang = 'he') {
-  const cached = await searchCache(query, lang);
-  if (cached.length > 0) return cached;
-
-  let scraperResults = [];
-
-  if (lang === 'he') {
-    scraperResults = searchTab4U(query).map(r => ({
-      song_title: r.title,
-      artist:     r.artist,
-      source:     'tab4u',
-      source_url: r.url,
-      language:   lang,
-    }));
-  } else {
-    scraperResults = searchUltimateGuitar(query).map(r => ({
-      song_title: r.title,
-      artist:     r.artist,
-      source:     'ultimate_guitar',
-      source_url: r.url,
-      language:   lang,
-    }));
-
-    if (scraperResults.length === 0) {
-      scraperResults = searchTab4U(query).map(r => ({
+  // Run cache lookup and scraper search in parallel
+  const [cached, rawScraper] = await Promise.all([
+    searchCache(query, lang),
+    (async () => {
+      if (lang === 'he') {
+        return searchTab4U(query).map(r => ({
+          song_title: r.title,
+          artist:     r.artist,
+          source:     'tab4u',
+          source_url: r.url,
+          language:   lang,
+        }));
+      }
+      const ug = searchUltimateGuitar(query).map(r => ({
+        song_title: r.title,
+        artist:     r.artist,
+        source:     'ultimate_guitar',
+        source_url: r.url,
+        language:   lang,
+      }));
+      if (ug.length > 0) return ug;
+      return searchTab4U(query).map(r => ({
         song_title: r.title,
         artist:     r.artist,
         source:     'tab4u',
         source_url: r.url,
         language:   lang,
       }));
-    }
-  }
+    })(),
+  ]);
 
-  return scraperResults.slice(0, 20);
+  // Build a set of keys for cached results so we can deduplicate
+  const cachedKeys = new Set(
+    cached.map(r => `${r.song_title.toLowerCase()}|${(r.artist || '').toLowerCase()}`),
+  );
+
+  // Only add scraper results that aren't already in the cache
+  const newFromScraper = rawScraper.filter(r => {
+    const k = `${r.song_title.toLowerCase()}|${(r.artist || '').toLowerCase()}`;
+    return !cachedKeys.has(k);
+  });
+
+  return [...cached, ...newFromScraper].slice(0, 20);
 }
 
 /**

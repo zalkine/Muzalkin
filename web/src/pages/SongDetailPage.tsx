@@ -69,7 +69,8 @@ export default function SongDetailPage() {
   const navigate       = useNavigate();
   const { t, i18n }    = useTranslation();
   const session        = useSession();
-  const isRTL          = i18n.language === 'he';
+  // Direction follows the song's language, not the UI language
+  const [isRTL, setIsRTL] = useState(i18n.language === 'he');
 
   const [song,     setSong]     = useState<Song | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -92,13 +93,36 @@ export default function SongDetailPage() {
 
   useEffect(() => {
     if (!id) return;
+    // Try cached_chords first (from search), then songs table (from playlist)
     supabase
       .from('cached_chords')
       .select('*')
       .eq('id', id)
       .single()
-      .then(({ data, error }) => {
-        if (!error && data) setSong(data as Song);
+      .then(async ({ data, error }) => {
+        if (!error && data) {
+          setSong(data as Song);
+          setIsRTL((data as Song).language === 'he');
+          setLoading(false);
+          return;
+        }
+        // Not in cache — try the user's songs table (title/artist columns differ)
+        const { data: saved } = await supabase
+          .from('songs')
+          .select('id, title, artist, language, chords_data')
+          .eq('id', id)
+          .single();
+        if (saved) {
+          const s: Song = {
+            id:          saved.id,
+            song_title:  saved.title,
+            artist:      saved.artist,
+            language:    saved.language,
+            chords_data: saved.chords_data,
+          };
+          setSong(s);
+          setIsRTL(s.language === 'he');
+        }
         setLoading(false);
       });
   }, [id]);

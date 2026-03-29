@@ -155,22 +155,32 @@ export default function PlaylistsPage() {
         {status === 'done' && playlists.length > 0 && (
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {playlists.map((pl, idx) => (
-              <li key={pl.id} style={{
-                display: 'flex',
-                flexDirection: isRTL ? 'row-reverse' : 'row',
-                alignItems: 'center',
-                padding: '14px 16px',
-                borderBottom: idx < playlists.length - 1 ? '1px solid var(--border2)' : 'none',
-              }}>
-                <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{pl.name}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>
-                    {t(pl.song_count === 1 ? 'songs_count_one' : 'songs_count_other', {
-                      count: pl.song_count,
-                    })}
+              <li key={pl.id}>
+                <button
+                  onClick={() => navigate(`/playlist/${pl.id}`)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: isRTL ? 'row-reverse' : 'row',
+                    alignItems: 'center',
+                    padding: '14px 16px',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: idx < playlists.length - 1 ? '1px solid var(--border2)' : 'none',
+                    cursor: 'pointer',
+                    textAlign: isRTL ? 'right' : 'left',
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{pl.name}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text3)' }}>
+                      {t(pl.song_count === 1 ? 'songs_count_one' : 'songs_count_other', {
+                        count: pl.song_count,
+                      })}
+                    </div>
                   </div>
-                </div>
-                <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
+                  <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
+                </button>
               </li>
             ))}
           </ul>

@@ -241,26 +241,36 @@ def _parse_ug_content(content: str) -> list:
     UG chord tabs use markers like [ch]Am[/ch] for inline chords and
     [tab]...[/tab] for chord+lyric blocks. Section headers are in [Verse], etc.
 
-    We strip the markup and classify each line.
+    Two formats exist on UG:
+    1. Chords on separate lines:  "Am          G"  followed by lyrics line
+    2. Inline mixed:              "[ch]Am[/ch]cool wind in my [ch]G[/ch]hair"
+
+    For format 2, we split into a chord line + lyric line so chords are preserved.
     """
-    # Remove [tab] / [/tab] wrappers
     content = re.sub(r"\[/?tab\]", "", content)
-
-    # Strip [ch]...[/ch] inline chord markers FIRST (keep the chord text)
-    # Must happen before the general [..] stripper below, otherwise
-    # [ch]Am[/ch] gets mangled to chAm/ch and never recognised as chords.
-    content = re.sub(r"\[ch\](.*?)\[/ch\]", r"\1", content)
-
-    # Extract section markers like [Verse 1], [Chorus]
-    # Replace them with the bare text on their own line
-    content = re.sub(r"\[([^\]]+)\]", r"\1", content)
+    inline_re = re.compile(r"\[ch\](.*?)\[/ch\]")
 
     chords_data = []
     for raw_line in content.splitlines():
-        kind = _classify_line(raw_line)
-        if kind == "empty":
-            continue
-        chords_data.append({"type": kind, "content": raw_line.rstrip()})
+        if inline_re.search(raw_line):
+            # Extract the chord names in order
+            chords = inline_re.findall(raw_line)
+            # Build the lyric line by removing all [ch]...[/ch] blocks
+            lyric = inline_re.sub("", raw_line)
+            # Remove any remaining [...] section markers
+            lyric = re.sub(r"\[([^\]]+)\]", "", lyric)
+            lyric = re.sub(r"  +", " ", lyric).strip()
+
+            if chords:
+                chords_data.append({"type": "chords", "content": "  ".join(chords)})
+            if lyric:
+                chords_data.append({"type": "lyrics", "content": lyric})
+        else:
+            # No inline chord markers — handle section labels and plain lyrics
+            line = re.sub(r"\[([^\]]+)\]", r"\1", raw_line)
+            kind = _classify_line(line)
+            if kind != "empty":
+                chords_data.append({"type": kind, "content": line.rstrip()})
 
     return chords_data
 
