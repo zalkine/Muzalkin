@@ -1,5 +1,4 @@
 import { forwardRef } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export type ChordLine = {
   type: 'chords' | 'lyrics' | 'section';
@@ -9,11 +8,10 @@ export type ChordLine = {
 type Props = {
   data: ChordLine[];
   fontSize?: number; // multiplier, default 1.0
+  isRTL?: boolean;   // pass from parent based on song language, not UI language
 };
 
-const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data, fontSize = 1 }, ref) => {
-  const { i18n } = useTranslation();
-  const isRTL = i18n.language === 'he';
+const ChordDisplay = forwardRef<HTMLDivElement, Props>(({ data, fontSize = 1, isRTL = false }, ref) => {
 
   return (
     <div

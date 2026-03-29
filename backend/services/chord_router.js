@@ -41,17 +41,25 @@ async function searchCache(query, lang) {
   const q = query.trim();
   const { data, error } = await getSupabaseAnon()
     .from('cached_chords')
-    .select('id, song_title, artist, language, source, fetched_at')
+    // Include chords_data so we can filter out bad (chord-less) entries
+    .select('id, song_title, artist, language, source, fetched_at, chords_data')
     .eq('language', lang)
     .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
     .order('fetched_at', { ascending: false })
-    .limit(20);
+    .limit(40);
 
   if (error) {
     console.error('Cache search error:', error.message);
     return [];
   }
-  return data || [];
+
+  // Skip entries that were cached without any chord lines (scraper bug from old code)
+  const valid = (data || []).filter(row =>
+    Array.isArray(row.chords_data) && row.chords_data.some(l => l.type === 'chords'),
+  );
+
+  // Return without chords_data (the search list only needs metadata)
+  return valid.slice(0, 20).map(({ chords_data: _cd, ...rest }) => rest);
 }
 
 async function getCachedById(id) {
@@ -211,7 +219,16 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     .limit(1)
     .single();
 
-  if (existing) return existing;
+  if (existing) {
+    // Only use the cached version if it actually has chord lines.
+    // Entries cached by old buggy code may have only lyrics.
+    const hasChords = Array.isArray(existing.chords_data) &&
+      existing.chords_data.some(l => l.type === 'chords');
+    if (hasChords) return existing;
+    // Delete the bad entry so we re-scrape cleanly
+    console.log(`Re-scraping ${url} — cached entry had no chord lines`);
+    await getSupabase().from('cached_chords').delete().eq('id', existing.id);
+  }
 
   let scraped = null;
   if (source === 'ultimate_guitar') {

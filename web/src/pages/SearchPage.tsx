@@ -34,7 +34,9 @@ export default function SearchPage() {
     setStatus('loading');
     setResults([]);
     try {
-      const lang = i18n.language === 'he' ? 'he' : 'en';
+      // Detect language from the query text itself, not the UI language:
+      // if the query contains Hebrew characters → search Hebrew sources, else English.
+      const lang = /[\u0590-\u05FF]/.test(q) ? 'he' : 'en';
       const url  = `${BACKEND_URL}/api/chords/search?q=${encodeURIComponent(q)}&lang=${lang}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Backend ${resp.status}`);

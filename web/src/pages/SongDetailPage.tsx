@@ -622,7 +622,7 @@ export default function SongDetailPage() {
           </div>
         ) : (
           /* ── Normal chord sheet ── */
-          <ChordDisplay data={displayData} fontSize={fontSize} />
+          <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} />
         )}
       </div>
 
