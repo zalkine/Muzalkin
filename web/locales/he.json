@@ -53,5 +53,13 @@
   "saving": "שומר…",
   "font_size_increase": "א+",
   "font_size_decrease": "א−",
-  "sign_in_to_see_playlists": "התחבר כדי ליצור ולראות את הפלייליסטים שלך"
+  "sign_in_to_see_playlists": "התחבר כדי ליצור ולראות את הפלייליסטים שלך",
+  "edit_chords": "✏️ ערוך",
+  "edit_save": "שמור שינויים",
+  "type_chords": "אקורדים",
+  "type_lyrics": "מילים",
+  "type_section": "קטע",
+  "add_line": "+ הוסף שורה",
+  "playlist_empty": "הפלייליסט ריק. הוסף שיר מהחיפוש.",
+  "remove": "הסר"
 }

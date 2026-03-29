@@ -53,5 +53,13 @@
   "saving": "Saving…",
   "font_size_increase": "A+",
   "font_size_decrease": "A−",
-  "sign_in_to_see_playlists": "Sign in to create and view your playlists"
+  "sign_in_to_see_playlists": "Sign in to create and view your playlists",
+  "edit_chords": "✏️ Edit",
+  "edit_save": "Save Changes",
+  "type_chords": "Chords",
+  "type_lyrics": "Lyrics",
+  "type_section": "Section",
+  "add_line": "+ Add line",
+  "playlist_empty": "This playlist is empty. Add a song from Search.",
+  "remove": "Remove"
 }
