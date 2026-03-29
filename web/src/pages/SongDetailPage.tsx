@@ -254,6 +254,20 @@ export default function SongDetailPage() {
     if (savedId) { if (!silent) alert(t('saved')); return savedId; }
     setSaving(true);
     try {
+      // Check if already saved (handles page-refresh case where state is lost)
+      const { data: existing } = await supabase
+        .from('songs')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .eq('title', song.song_title)
+        .eq('artist', song.artist)
+        .maybeSingle();
+      if (existing) {
+        setSavedId(existing.id);
+        if (!silent) alert(t('saved'));
+        return existing.id;
+      }
+
       const { data: saved, error } = await supabase
         .from('songs')
         .insert({
@@ -274,7 +288,7 @@ export default function SongDetailPage() {
       return saved.id;
     } catch (err) {
       console.error('Save error:', err);
-      alert(t('save_error'));
+      if (!silent) alert(t('save_error'));
       return null;
     } finally {
       setSaving(false);
