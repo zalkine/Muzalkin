@@ -494,17 +494,17 @@ export default function SongDetailPage() {
           </button>
         )}
 
-        {/* Save to library button */}
+        {/* Single save/playlist button */}
         {!editMode && (
           <button
-            onClick={() => handleSave(false)}
-            disabled={saving || !!savedId}
+            onClick={openPlaylistModal}
+            disabled={saving}
             style={{
               ...saveBtnStyle,
-              backgroundColor: savedId ? '#4caf50' : saving ? '#aaa' : 'var(--accent)',
+              backgroundColor: saving ? '#aaa' : 'var(--accent)',
             }}
           >
-            {saving ? t('saving') : savedId ? '✓' : t('save_song')}
+            {saving ? t('saving') : t('save_song')}
           </button>
         )}
 
@@ -581,7 +581,6 @@ export default function SongDetailPage() {
               {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
             </button>
             <button style={toolBtnStyle} onClick={handleShare}>{t('share')}</button>
-            <button style={toolBtnStyle} onClick={openPlaylistModal}>+PL</button>
           </div>
         </div>
       )}
