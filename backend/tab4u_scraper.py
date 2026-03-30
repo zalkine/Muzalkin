@@ -131,6 +131,71 @@ def _parse_tab4u_href(href: str) -> tuple:
 # Scrape a song page
 # ---------------------------------------------------------------------------
 
+def _parse_tab4u_row(row) -> list:
+    """
+    Parse one row of Tab4U's #songContentTPL table.
+
+    Tab4U interleaves chord cells and lyric cells in the SAME row:
+        <td class="chords">D</td><td class="song">שוב </td>
+        <td class="chords">Dmaj7</td><td class="song">אני מוצץ גבעול</td>
+
+    We walk all cells left-to-right, pairing each chord with the lyric
+    segment that immediately follows it.  This produces a rich 'line' entry:
+        { type: 'line', segments: [{chord: 'D', lyric: 'שוב '},
+                                   {chord: 'Dmaj7', lyric: 'אני מוצץ גבעול'}] }
+
+    Rows that only have section-tag cells or only lyric cells (no chord
+    above that line) fall back to the simpler legacy format.
+    """
+    # Section / tag rows
+    tag_cells = row.find_all("td", class_=re.compile(r"\bsongTag\b|\btag\b", re.I))
+    if tag_cells:
+        text = tag_cells[0].get_text().strip()
+        if text:
+            return [{"type": "section", "content": text}]
+        return []
+
+    cells = row.find_all("td")
+    has_chords = any("chords" in (c.get("class") or []) for c in cells)
+    has_song   = any("song"   in (c.get("class") or []) for c in cells)
+
+    if has_chords and has_song:
+        # Rich interleaved format
+        segments = []
+        pending_chord = ""
+        for cell in cells:
+            classes = cell.get("class") or []
+            raw = cell.get_text(separator=" ").replace("\xa0", " ")
+            text = re.sub(r"  +", " ", raw).strip()
+            if "chords" in classes:
+                pending_chord = text
+            elif "song" in classes:
+                lyric = cell.get_text(separator="").replace("\xa0", " ")
+                segments.append({"chord": pending_chord, "lyric": lyric})
+                pending_chord = ""
+        # Trailing chord with no following lyric — attach to last segment
+        if pending_chord and segments:
+            segments[-1]["chord"] = (segments[-1]["chord"] + "  " + pending_chord).strip()
+        if any(s.get("chord") for s in segments):
+            return [{"type": "line", "segments": segments}]
+        full = "".join(s.get("lyric", "") for s in segments).strip()
+        return [{"type": "lyrics", "content": full}] if full else []
+
+    if has_chords:
+        parts = [
+            re.sub(r"  +", "  ", c.get_text(separator=" ").replace("\xa0", " ")).strip()
+            for c in row.find_all("td", class_="chords")
+        ]
+        content = "  ".join(p for p in parts if p)
+        return [{"type": "chords", "content": content}] if content else []
+
+    if has_song:
+        text = row.find("td", class_="song").get_text(separator=" ").replace("\xa0", " ").strip()
+        return [{"type": "lyrics", "content": text}] if text else []
+
+    return []
+
+
 def scrape_song_page(url: str) -> list:
     """
     Fetch a Tab4U song page and return the chords_data array.
@@ -155,32 +220,7 @@ def scrape_song_page(url: str) -> list:
     if tpl:
         result = []
         for row in tpl.find_all("tr"):
-            chord_cells = row.find_all("td", class_="chords")
-            if chord_cells:
-                parts = []
-                for cell in chord_cells:
-                    text = cell.get_text(separator=" ").replace("\xa0", " ").strip()
-                    text = re.sub(r"  +", "  ", text)
-                    if text:
-                        parts.append(text)
-                content = "  ".join(parts)
-                if content:
-                    result.append({"type": "chords", "content": content})
-                continue
-
-            tag_cells = row.find_all("td", class_=re.compile(r"\bsongTag\b|\btag\b", re.I))
-            if tag_cells:
-                text = tag_cells[0].get_text().strip()
-                if text:
-                    result.append({"type": "section", "content": text})
-                continue
-
-            song_cells = row.find_all("td", class_="song")
-            if song_cells:
-                text = song_cells[0].get_text(separator=" ").replace("\xa0", " ").strip()
-                if text:
-                    result.append({"type": "lyrics", "content": text})
-
+            result.extend(_parse_tab4u_row(row))
         if result:
             return result
 

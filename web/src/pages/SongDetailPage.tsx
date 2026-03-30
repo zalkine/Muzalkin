@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
-import ChordDisplay, { ChordLine } from '../components/ChordDisplay';
+import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
 
 // ---------------------------------------------------------------------------
 // Chord transposition helpers
@@ -44,11 +44,40 @@ function transposeLine(content: string, semitones: number): string {
 
 function applyTranspose(data: ChordLine[], semitones: number): ChordLine[] {
   if (semitones === 0) return data;
-  return data.map((line) =>
-    line.type === 'chords'
-      ? { ...line, content: transposeLine(line.content, semitones) }
-      : line,
-  );
+  return data.map((line) => {
+    if (line.type === 'chords') {
+      return { ...line, content: transposeLine(line.content, semitones) };
+    }
+    if (line.type === 'line') {
+      return {
+        ...line,
+        segments: line.segments.map(seg => ({
+          ...seg,
+          chord: seg.chord ? transposeLine(seg.chord, semitones) : seg.chord,
+        })),
+      };
+    }
+    return line;
+  });
+}
+
+/**
+ * Flatten 'line' segment entries into simple chord + lyrics pairs so the
+ * editor can work with them as plain text rows.
+ */
+function expandForEditor(data: ChordLine[]): ChordLineSimple[] {
+  const result: ChordLineSimple[] = [];
+  for (const line of data) {
+    if (line.type === 'line') {
+      const chords = line.segments.map(s => s.chord ?? '').join('  ').trim();
+      const lyrics = line.segments.map(s => s.lyric ?? '').join('');
+      if (chords) result.push({ type: 'chords', content: chords });
+      if (lyrics.trim()) result.push({ type: 'lyrics', content: lyrics });
+    } else {
+      result.push(line);
+    }
+  }
+  return result;
 }
 
 const SCROLL_SPEEDS = [0.2, 0.4, 0.6, 0.9, 1.4];
@@ -301,7 +330,7 @@ export default function SongDetailPage() {
 
   const enterEdit = useCallback(() => {
     if (!song) return;
-    setEditData(song.chords_data.map(l => ({ ...l })));
+    setEditData(expandForEditor(song.chords_data));
     setEditMode(true);
     // Stop auto-scroll while editing
     if (scrollTimer.current) clearInterval(scrollTimer.current);
