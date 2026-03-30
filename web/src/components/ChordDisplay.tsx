@@ -103,13 +103,61 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           }
 
           // ── Legacy simple formats ───────────────────────────────────────
+          // For chords+lyrics pairs: peek at next line to render them together
+          // so the chord row sits flush above the lyric row with no gap.
+          if (line.type === 'chords') {
+            const nextLine = data[i + 1];
+            const hasLyricBelow = nextLine?.type === 'lyrics';
+            return (
+              <div
+                key={i}
+                style={{
+                  marginTop: Math.round(14 * fontSize),
+                  marginBottom: 0,
+                  lineHeight: 1,
+                }}
+              >
+                {/* Chord row */}
+                <div style={{ marginBottom: Math.round(2 * fontSize) }}>
+                  <span
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: Math.round(14 * fontSize),
+                      fontWeight: 700,
+                      color: 'var(--accent)',
+                      whiteSpace: 'pre',
+                      letterSpacing: Math.round(2 * fontSize) + 'px',
+                    }}
+                  >
+                    {line.content}
+                  </span>
+                </div>
+                {/* Lyric row rendered here so chord+lyric are one visual block */}
+                {hasLyricBelow && (
+                  <div style={{ marginBottom: Math.round(4 * fontSize) }}>
+                    <span
+                      style={{
+                        fontSize: Math.round(17 * fontSize),
+                        color: 'var(--text)',
+                        lineHeight: `${Math.round(26 * fontSize)}px`,
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {nextLine.content}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           switch (line.type) {
             case 'section':
               return (
-                <div key={i} style={{ marginTop: 20, marginBottom: 4 }}>
+                <div key={i} style={{ marginTop: Math.round(22 * fontSize), marginBottom: 4 }}>
                   <span
                     style={{
-                      fontSize: Math.round(12 * fontSize),
+                      fontSize: Math.round(13 * fontSize),
                       fontWeight: 700,
                       color: 'var(--text2)',
                       textTransform: 'uppercase',
@@ -121,30 +169,15 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 </div>
               );
 
-            case 'chords':
+            case 'lyrics': {
+              // Skip if already rendered above by the preceding 'chords' block
+              const prevLine = data[i - 1];
+              if (prevLine?.type === 'chords') return null;
               return (
-                <div key={i} style={{ marginTop: 10 }}>
+                <div key={i} style={{ marginBottom: Math.round(4 * fontSize) }}>
                   <span
                     style={{
-                      fontFamily: 'monospace',
-                      fontSize: Math.round(14 * fontSize),
-                      fontWeight: 700,
-                      color: 'var(--accent)',
-                      lineHeight: `${Math.round(20 * fontSize)}px`,
-                      whiteSpace: 'pre',
-                    }}
-                  >
-                    {line.content}
-                  </span>
-                </div>
-              );
-
-            case 'lyrics':
-              return (
-                <div key={i} style={{ marginBottom: 2 }}>
-                  <span
-                    style={{
-                      fontSize: Math.round(16 * fontSize),
+                      fontSize: Math.round(17 * fontSize),
                       color: 'var(--text)',
                       lineHeight: `${Math.round(26 * fontSize)}px`,
                       whiteSpace: 'pre-wrap',
@@ -154,6 +187,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   </span>
                 </div>
               );
+            }
 
             default:
               return null;

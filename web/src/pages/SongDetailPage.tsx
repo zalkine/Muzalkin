@@ -214,8 +214,8 @@ export default function SongDetailPage() {
   const [saving,   setSaving]   = useState(false);
   const [savedId,  setSavedId]  = useState<string | null>(null);
   const [semitones, setSemitones] = useState(0);
-  const [fontSize,  setFontSize]  = useState(1.0);
-  const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8];
+  const [fontSize,  setFontSize]  = useState(1.4);
+  const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollOffset  = useRef(0);
@@ -400,10 +400,12 @@ export default function SongDetailPage() {
       setScrolling(false);
     } else {
       setScrolling(true);
-      scrollTimer.current = setInterval(() => {
-        scrollOffset.current += SCROLL_SPEEDS[speedIndex];
-        scrollAreaRef.current?.scrollTo({ top: scrollOffset.current, behavior: 'auto' });
-      }, 50);
+      setTimeout(() => {
+        scrollTimer.current = setInterval(() => {
+          scrollOffset.current += SCROLL_SPEEDS[speedIndex];
+          scrollAreaRef.current?.scrollTo({ top: scrollOffset.current, behavior: 'auto' });
+        }, 50);
+      }, 1000);
     }
   }, [scrolling, speedIndex]);
 
