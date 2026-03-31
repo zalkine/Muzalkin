@@ -29,6 +29,9 @@ RUN npm ci --omit=dev
 # Copy backend source
 COPY backend/ ./
 
+# Copy Python scraper scripts
+COPY scraper/ ./scraper/
+
 # Copy built web app to public/ so Express can serve it
 COPY --from=web-builder /web/dist ./public
 

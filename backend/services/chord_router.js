@@ -99,8 +99,9 @@ async function saveToCache({ title, artist, lang, source, chordsData, url }) {
 // Scrapers
 // ---------------------------------------------------------------------------
 
-// Scrapers live in  <repo-root>/scraper/  (sibling of backend/)
-const SCRAPER_DIR = path.join(__dirname, '..', '..', 'scraper');
+// Scrapers live in  <container>/app/scraper/  (copied from repo-root/scraper/)
+// __dirname = /app/services → ../scraper = /app/scraper
+const SCRAPER_DIR = path.join(__dirname, '..', 'scraper');
 
 function runPythonScraper(scriptName, args) {
   const result = spawnSync(
