@@ -25,6 +25,7 @@ export default function SearchPage() {
   const [results,    setResults]    = useState<SearchResult[]>([]);
   const [status,     setStatus]     = useState<Status>('idle');
   const [fetchingId, setFetchingId] = useState<string | null>(null); // source_url being fetched
+  const [searchLang, setSearchLang] = useState<'he' | 'en'>('he'); // language of last search query
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSearch = useCallback(async () => {
@@ -37,6 +38,7 @@ export default function SearchPage() {
       // Detect language from the query text itself, not the UI language:
       // if the query contains Hebrew characters → search Hebrew sources, else English.
       const lang = /[\u0590-\u05FF]/.test(q) ? 'he' : 'en';
+      setSearchLang(lang);
       const url  = `${BACKEND_URL}/api/chords/search?q=${encodeURIComponent(q)}&lang=${lang}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Backend ${resp.status}`);
@@ -63,7 +65,10 @@ export default function SearchPage() {
 
     setFetchingId(item.source_url);
     try {
-      const lang = i18n.language === 'he' ? 'he' : 'en';
+      // Use the language detected from the search query, not the UI language.
+      // This ensures English songs are stored with language='en' even when
+      // the user's UI language is Hebrew.
+      const lang = item.language ?? searchLang;
       const resp = await fetch(`${BACKEND_URL}/api/chords/fetch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

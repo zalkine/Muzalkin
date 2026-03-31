@@ -82,6 +82,22 @@ function expandForEditor(data: ChordLine[]): ChordLineSimple[] {
 
 const SCROLL_SPEEDS = [0.2, 0.4, 0.6, 0.9, 1.4];
 
+/**
+ * Detect the actual language of a song from its chord/lyric content.
+ * Overrides the stored language field, which can be wrong for English songs
+ * that were accidentally cached with language='he'.
+ */
+function detectLangFromContent(chordsData: ChordLine[]): 'he' | 'en' {
+  const text = chordsData
+    .filter(l => l.type === 'lyrics' || l.type === 'section')
+    .map(l => ('content' in l ? l.content : ''))
+    .join(' ');
+  const heCount = (text.match(/[\u0590-\u05FF]/g) || []).length;
+  const enCount = (text.match(/[a-zA-Z]/g) || []).length;
+  // Need clear English majority to flip to LTR; default to Hebrew
+  return enCount > heCount * 2 ? 'en' : 'he';
+}
+
 type Song = {
   id: string;
   song_title: string;
@@ -243,7 +259,9 @@ export default function SongDetailPage() {
       .then(async ({ data, error }) => {
         if (!error && data) {
           setSong(data as Song);
-          setIsRTL((data as Song).language === 'he');
+          // Use content-based language detection: the stored language field can
+          // be wrong for English songs cached while the UI was in Hebrew mode.
+          setIsRTL(detectLangFromContent((data as Song).chords_data || []) === 'he');
           setLoading(false);
           return;
         }
@@ -263,7 +281,7 @@ export default function SongDetailPage() {
           };
           setSong(s);
           setSavedId(saved.id); // already saved — enable edit button immediately
-          setIsRTL(s.language === 'he');
+          setIsRTL(detectLangFromContent(s.chords_data || []) === 'he');
         }
         setLoading(false);
       });

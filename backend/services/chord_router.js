@@ -99,7 +99,8 @@ async function saveToCache({ title, artist, lang, source, chordsData, url }) {
 // Scrapers
 // ---------------------------------------------------------------------------
 
-const SCRAPER_DIR = path.join(__dirname, '..');
+// Scrapers live in  <repo-root>/scraper/  (sibling of backend/)
+const SCRAPER_DIR = path.join(__dirname, '..', '..', 'scraper');
 
 function runPythonScraper(scriptName, args) {
   const result = spawnSync(
@@ -125,26 +126,22 @@ function runPythonScraper(scriptName, args) {
   }
 }
 
-// Returns array of { title, artist, url } — no chords scraped yet
-function searchTab4U(query, artist = '') {
-  const args = ['--search-only', query];
-  if (artist) args.push(artist);
-  return runPythonScraper('tab4u_scraper.py', args) ?? [];
+// Returns array of { title, artist, source, url }
+function searchTab4U(query) {
+  return runPythonScraper('search.py', ['tab4u', query]) ?? [];
 }
 
-function searchUltimateGuitar(query, artist = '') {
-  const args = ['--search-only', query];
-  if (artist) args.push(artist);
-  return runPythonScraper('ultimate_guitar_scraper.py', args) ?? [];
+function searchUltimateGuitar(query) {
+  return runPythonScraper('search.py', ['ug', query]) ?? [];
 }
 
-// Fetch and parse chords for a specific URL
-function fetchTab4UByUrl(url, title = '', artist = '') {
-  return runPythonScraper('tab4u_scraper.py', ['--url', url, title, artist]);
+// Fetch and parse chords for a specific URL — returns ChordLine[] array
+function fetchTab4UByUrl(url) {
+  return runPythonScraper('fetch_chords.py', ['tab4u', url]);
 }
 
-function fetchUGByUrl(url, title = '', artist = '') {
-  return runPythonScraper('ultimate_guitar_scraper.py', ['--url', url, title, artist]);
+function fetchUGByUrl(url) {
+  return runPythonScraper('fetch_chords.py', ['ultimate_guitar', url]);
 }
 
 // ---------------------------------------------------------------------------
@@ -165,30 +162,20 @@ async function searchChords(query, lang = 'he') {
   const [cached, rawScraper] = await Promise.all([
     searchCache(query, lang),
     (async () => {
+      const toResult = (r, src) => ({
+        song_title: r.title,
+        artist:     r.artist,
+        source:     src || r.source || 'tab4u',
+        source_url: r.url,
+        language:   lang,
+      });
+
       if (lang === 'he') {
-        return searchTab4U(query).map(r => ({
-          song_title: r.title,
-          artist:     r.artist,
-          source:     'tab4u',
-          source_url: r.url,
-          language:   lang,
-        }));
+        return searchTab4U(query).map(r => toResult(r, 'tab4u'));
       }
-      const ug = searchUltimateGuitar(query).map(r => ({
-        song_title: r.title,
-        artist:     r.artist,
-        source:     'ultimate_guitar',
-        source_url: r.url,
-        language:   lang,
-      }));
+      const ug = searchUltimateGuitar(query).map(r => toResult(r, 'ultimate_guitar'));
       if (ug.length > 0) return ug;
-      return searchTab4U(query).map(r => ({
-        song_title: r.title,
-        artist:     r.artist,
-        source:     'tab4u',
-        source_url: r.url,
-        language:   lang,
-      }));
+      return searchTab4U(query).map(r => toResult(r, 'tab4u'));
     })(),
   ]);
 
@@ -230,22 +217,23 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     await getSupabase().from('cached_chords').delete().eq('id', existing.id);
   }
 
-  let scraped = null;
+  // fetch_chords.py returns a ChordLine[] array directly (not a wrapped object)
+  let chordsArray = null;
   if (source === 'ultimate_guitar') {
-    scraped = fetchUGByUrl(url, title, artist);
+    chordsArray = fetchUGByUrl(url);
   } else {
-    scraped = fetchTab4UByUrl(url, title, artist);
+    chordsArray = fetchTab4UByUrl(url);
   }
 
-  if (!scraped || !scraped.chords_data) return null;
+  if (!Array.isArray(chordsArray) || chordsArray.length === 0) return null;
 
   return saveToCache({
-    title:      scraped.title  || title,
-    artist:     scraped.artist || artist,
+    title,
+    artist,
     lang,
     source,
-    chordsData: scraped.chords_data,
-    url:        scraped.url || url,
+    chordsData: chordsArray,
+    url,
   });
 }
 

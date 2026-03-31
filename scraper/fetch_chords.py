@@ -101,6 +101,109 @@ def fetch_tab4u(url: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Ultimate Guitar chord page parser
+# ---------------------------------------------------------------------------
+
+def fetch_ultimate_guitar(url: str) -> list[dict]:
+    """
+    Parse chords from an Ultimate Guitar chord/tab page.
+    UG embeds JSON inside <div class="js-store" data-content="...">.
+    Tab content uses [ch]CHORD[/ch] markers for chord names.
+    """
+    from html import unescape as html_unescape
+
+    scraper = make_scraper()
+    print(f"[fetch_ug] fetching: {url}", file=sys.stderr)
+
+    try:
+        res = scraper.get(url, timeout=20)
+    except Exception as e:
+        print(f"[fetch_ug] request error: {e}", file=sys.stderr)
+        return []
+
+    if res.status_code != 200:
+        print(f"[fetch_ug] HTTP {res.status_code}", file=sys.stderr)
+        return []
+
+    soup  = BeautifulSoup(res.text, "html.parser")
+    store = soup.find("div", class_="js-store")
+    if not store:
+        print("[fetch_ug] js-store div not found", file=sys.stderr)
+        return []
+
+    try:
+        data     = json.loads(store.get("data-content", "{}"))
+        tab_view = (data.get("store", {})
+                        .get("page", {})
+                        .get("data", {})
+                        .get("tab_view", {}))
+        content  = tab_view.get("wiki_tab", {}).get("content", "")
+    except Exception as e:
+        print(f"[fetch_ug] JSON parse error: {e}", file=sys.stderr)
+        return []
+
+    if not content:
+        print("[fetch_ug] no tab content found", file=sys.stderr)
+        return []
+
+    print(f"[fetch_ug] content length={len(content)}", file=sys.stderr)
+    return _parse_ug_content(html_unescape(content))
+
+
+def _parse_ug_content(content: str) -> list[dict]:
+    """
+    Parse UG tab content with [ch]CHORD[/ch] markers.
+
+    Rules:
+      - Lines that match [verse …], [chorus], etc.  → section
+      - Lines whose non-whitespace content is entirely [ch]…[/ch] tokens → chords
+        The chord string preserves spacing so positions align with the lyric below.
+      - Lines with [ch] tokens mixed with real text → separate chord + lyric lines
+      - Plain text lines  → lyrics
+    """
+    content = re.sub(r'\[/?tab\]', '', content)
+    CHORD_IN_LINE = re.compile(r'\[ch\](.*?)\[/ch\]')
+
+    result = []
+
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip()
+
+        # Section markers: [verse 1], [chorus], [bridge], etc.
+        sec = re.match(
+            r'^\[((verse|chorus|bridge|intro|outro|pre-chorus|interlude|solo)[^\]]*)\]$',
+            line, re.I)
+        if sec:
+            result.append({"type": "section", "content": sec.group(1).strip().capitalize()})
+            continue
+
+        if not line.strip():
+            continue
+
+        chords_found = CHORD_IN_LINE.findall(line)
+        if not chords_found:
+            # Plain lyric line
+            result.append({"type": "lyrics", "content": line.strip()})
+            continue
+
+        # Build chord string by replacing [ch]X[/ch] with X, preserving spacing
+        chord_string = CHORD_IN_LINE.sub(lambda m: m.group(1), line)
+        # Check if everything outside the chord tags is just whitespace
+        lyric_text   = CHORD_IN_LINE.sub('', line).strip()
+
+        if not lyric_text:
+            # Chord-only line: preserve spacing for positional alignment
+            result.append({"type": "chords", "content": chord_string.strip()})
+        else:
+            # Mixed line: output chord line then lyric line
+            result.append({"type": "chords", "content": chord_string.strip()})
+            result.append({"type": "lyrics",  "content": lyric_text})
+
+    print(f"[fetch_ug] parsed {len(result)} lines", file=sys.stderr)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -114,6 +217,8 @@ if __name__ == "__main__":
 
     if source == "tab4u":
         out = fetch_tab4u(url)
+    elif source in ("ultimate_guitar", "ug"):
+        out = fetch_ultimate_guitar(url)
     else:
         print(f"[fetch_chords] Unknown source: {source}", file=sys.stderr)
         out = []
