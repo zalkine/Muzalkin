@@ -149,7 +149,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexDirection: 'row',
                   flexWrap: 'wrap',
                   marginBottom: 4,
                   paddingTop: topPad,
