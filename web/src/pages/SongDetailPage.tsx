@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 
 import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
+import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
+import StartJamModal from '../components/StartJamModal';
 
 // ---------------------------------------------------------------------------
 // Chord transposition helpers
@@ -223,7 +225,9 @@ export default function SongDetailPage() {
   const navigate       = useNavigate();
   const { t, i18n }    = useTranslation();
   const session        = useSession();
+  const jam            = useJam();
   const [isRTL, setIsRTL] = useState(i18n.language === 'he');
+  const [showJamModal, setShowJamModal] = useState(false);
 
   const [song,     setSong]     = useState<Song | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -290,6 +294,48 @@ export default function SongDetailPage() {
   useEffect(() => {
     return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // Jam session: broadcast song identity when loaded (host), or follow host (viewer)
+  // ---------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!song || jam.role !== 'host') return;
+    jam.broadcastSongChange({
+      songId: song.id,
+      source: 'cached',
+      title:  song.song_title,
+      artist: song.artist,
+    });
+  // Intentionally only re-run when the song id changes while hosting
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [song?.id, jam.role]);
+
+  // Viewer: navigate when host changes song
+  useEffect(() => {
+    if (jam.role !== 'viewer') return;
+    return jam.onSongChange((ref) => {
+      if (!ref.songId) {
+        // Empty songId = session ended signal
+        navigate('/search');
+        return;
+      }
+      if (ref.songId !== id) {
+        navigate(`/song/${ref.songId}`, { replace: true });
+      }
+    });
+  }, [jam, id, navigate]);
+
+  // Viewer: sync scroll from host
+  useEffect(() => {
+    if (jam.role !== 'viewer') return;
+    return jam.onScrollSync((pos) => {
+      if (scrollAreaRef.current) {
+        scrollAreaRef.current.scrollTo({ top: pos, behavior: 'smooth' });
+        scrollOffset.current = pos;
+      }
+    });
+  }, [jam]);
 
   // ---------------------------------------------------------------------------
   // Save to songs table
@@ -543,6 +589,22 @@ export default function SongDetailPage() {
           </button>
         )}
 
+        {/* Start Jam button (host) or Jam active indicator (viewer) */}
+        {!editMode && jam.role === null && session && (
+          <button
+            onClick={() => setShowJamModal(true)}
+            title={t('jam_start_title')}
+            style={{ ...toolBtnStyle, borderColor: 'var(--accent)', fontSize: 18, padding: '5px 8px' }}
+          >
+            🎸
+          </button>
+        )}
+        {!editMode && jam.role === 'viewer' && (
+          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>
+            🎸 {t('jam_viewer_label')}
+          </span>
+        )}
+
         {/* Single save/playlist button */}
         {!editMode && (
           <button
@@ -638,7 +700,11 @@ export default function SongDetailPage() {
       <div
         ref={scrollAreaRef}
         style={{ flex: 1, overflowY: 'auto' }}
-        onScroll={e => { scrollOffset.current = (e.target as HTMLDivElement).scrollTop; }}
+        onScroll={e => {
+          const top = (e.target as HTMLDivElement).scrollTop;
+          scrollOffset.current = top;
+          if (jam.role === 'host') jam.broadcastScroll(top);
+        }}
       >
         {editMode ? (
           /* ── Editor ── */

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useSession } from '../lib/SessionContext';
+import { useJam } from '../lib/jamContext';
 import { signOut } from '../lib/supabase';
 
 const NAV_ITEMS = [
@@ -14,6 +15,7 @@ export default function NavBar() {
   const isRTL  = i18n.language === 'he';
   const session = useSession();
   const navigate = useNavigate();
+  const jam      = useJam();
 
   const handleAuth = async () => {
     if (session) {
@@ -52,6 +54,30 @@ export default function NavBar() {
           <span>{t(labelKey)}</span>
         </NavLink>
       ))}
+
+      {/* Join Jam — pulsing icon when a session is active */}
+      <NavLink
+        to="/jam"
+        style={({ isActive }) => ({
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '10px 0',
+          gap: 3,
+          color: jam.sessionCode ? 'var(--accent)' : (isActive ? 'var(--accent)' : 'var(--text3)'),
+          fontSize: 11,
+          fontWeight: jam.sessionCode || isActive ? 700 : 400,
+          borderTop: (jam.sessionCode || isActive) ? '2px solid var(--accent)' : '2px solid transparent',
+          textDecoration: 'none',
+        })}
+      >
+        <span style={{ fontSize: 20, animation: jam.sessionCode ? 'jam-pulse 1.4s ease-in-out infinite' : 'none' }}>
+          🎸
+        </span>
+        <span>{t('jam_nav')}</span>
+      </NavLink>
 
       {/* Sign in / Sign out */}
       <button
