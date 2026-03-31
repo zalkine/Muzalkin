@@ -272,14 +272,15 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       type:    'broadcast',
       event:   'song_change',
       payload: song,
-    });
+    }).catch((err: unknown) => console.error('[jam] broadcastSongChange failed:', err));
 
     // Also persist current song to DB
     if (sessionCode) {
       supabase.from('jam_sessions').update({
         current_song_id:     song.songId,
         current_song_source: song.source,
-      }).eq('code', sessionCode);
+      }).eq('code', sessionCode)
+        .then(({ error }) => { if (error) console.error('[jam] DB update failed:', error.message); });
     }
   }, [role, sessionCode]);
 

@@ -754,6 +754,21 @@ export default function SongDetailPage() {
         )}
       </div>
 
+      {/* ── Start Jam modal ── */}
+      {showJamModal && song && (
+        <StartJamModal
+          song={{
+            songId: song.id,
+            source: savedId ? 'saved' : 'cached',
+            title:  song.song_title,
+            artist: song.artist,
+          }}
+          isRTL={isRTL}
+          onStarted={() => setShowJamModal(false)}
+          onCancel={() => setShowJamModal(false)}
+        />
+      )}
+
       {/* ── Add-to-playlist modal ── */}
       {showPLModal && (
         <div style={overlayStyle}>
