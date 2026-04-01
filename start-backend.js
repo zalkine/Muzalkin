@@ -9,7 +9,7 @@
  */
 
 const { spawn }  = require('child_process');
-const localtunnel = require('/opt/node22/lib/node_modules/localtunnel');
+const localtunnel = require('localtunnel');
 const fs          = require('fs');
 const path        = require('path');
 
