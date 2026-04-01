@@ -149,8 +149,12 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  flexDirection: 'row',
-                  direction: isRTL ? 'rtl' : 'ltr',
+                  // row-reverse puts seg[0] on the RIGHT for RTL songs, matching
+                  // the Hebrew reading direction (first lyric word is rightmost).
+                  // direction:'ltr' overrides the inherited RTL so the flex engine
+                  // doesn't double-reverse the item order.
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  direction: 'ltr',
                   flexWrap: 'wrap',
                   marginBottom: 4,
                   paddingTop: topPad,
@@ -160,7 +164,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {segments.map((seg, si) => (
                   <span
                     key={si}
-                    style={{ position: 'relative', display: 'inline-block' }}
+                    style={{ position: 'relative', display: 'inline-block', direction: isRTL ? 'rtl' : 'ltr' }}
                   >
                     {/* Chord floated above the lyric segment */}
                     {seg.chord?.trim() && (
