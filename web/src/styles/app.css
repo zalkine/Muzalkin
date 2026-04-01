@@ -9,7 +9,8 @@
   --text3:    #888888;
   --border:   #e0e0e0;
   --border2:  #f0f0f0;
-  --accent:   #4285F4;
+  --accent:       #4285F4;
+  --chord-color:  #e8640c;  /* Tab4U-style orange for chord names */
 }
 
 body.dark {
@@ -22,7 +23,8 @@ body.dark {
   --text3:    #888888;
   --border:   #333333;
   --border2:  #2a2a2a;
-  --accent:   #6ba3ff;
+  --accent:       #6ba3ff;
+  --chord-color:  #ff9642;  /* Tab4U-style orange, brightened for dark backgrounds */
 }
 
 /* ── Global reset ────────────────────────────────────────────────────── */

@@ -39,9 +39,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
       <div
         ref={ref}
         style={{
-          padding: '12px 16px',
+          padding: '16px 20px',
           direction: isRTL ? 'rtl' : 'ltr',
           textAlign: isRTL ? 'right' : 'left',
+          fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
         }}
       >
         {data.map((line, i) => {
@@ -49,7 +50,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           if (line.type === 'line') {
             const { segments } = line;
             const hasAnyChord = segments.some(s => s.chord?.trim());
-            const topPad = hasAnyChord ? Math.round(22 * fontSize) : 0;
+            const chordRowHeight = Math.round(22 * fontSize);
 
             return (
               <div
@@ -58,8 +59,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   display: 'flex',
                   flexDirection: isRTL ? 'row-reverse' : 'row',
                   flexWrap: 'wrap',
-                  marginBottom: 4,
-                  paddingTop: topPad,
+                  marginBottom: Math.round(2 * fontSize),
+                  paddingTop: hasAnyChord ? chordRowHeight : 0,
                   lineHeight: `${Math.round(26 * fontSize)}px`,
                 }}
               >
@@ -68,17 +69,16 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                     key={si}
                     style={{ position: 'relative', display: 'inline-block' }}
                   >
-                    {/* Chord floated above the lyric segment */}
                     {seg.chord?.trim() && (
                       <span
                         style={{
                           position: 'absolute',
-                          top: -topPad,
+                          top: -chordRowHeight,
                           [isRTL ? 'right' : 'left']: 0,
-                          fontFamily: 'monospace',
+                          fontFamily: '"Courier New", Courier, monospace',
                           fontWeight: 700,
-                          fontSize: Math.round(13 * fontSize),
-                          color: 'var(--accent)',
+                          fontSize: Math.round(14 * fontSize),
+                          color: 'var(--chord-color)',
                           whiteSpace: 'nowrap',
                           lineHeight: 1,
                         }}
@@ -86,12 +86,12 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                         {seg.chord}
                       </span>
                     )}
-                    {/* Lyric text */}
                     <span
                       style={{
                         fontSize: Math.round(16 * fontSize),
                         color: 'var(--text)',
                         whiteSpace: 'pre-wrap',
+                        lineHeight: `${Math.round(26 * fontSize)}px`,
                       }}
                     >
                       {seg.lyric}
@@ -103,8 +103,6 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           }
 
           // ── Legacy simple formats ───────────────────────────────────────
-          // For chords+lyrics pairs: peek at next line to render them together
-          // so the chord row sits flush above the lyric row with no gap.
           if (line.type === 'chords') {
             const nextLine = data[i + 1];
             const hasLyricBelow = nextLine?.type === 'lyrics';
@@ -112,21 +110,20 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               <div
                 key={i}
                 style={{
-                  marginTop: Math.round(14 * fontSize),
+                  marginTop: Math.round(16 * fontSize),
                   marginBottom: 0,
-                  lineHeight: 1,
                 }}
               >
-                {/* Chord row */}
-                <div style={{ marginBottom: Math.round(2 * fontSize) }}>
+                {/* Chord row — orange, monospace, tight below */}
+                <div style={{ lineHeight: 1.2, marginBottom: Math.round(1 * fontSize) }}>
                   <span
                     style={{
-                      fontFamily: 'monospace',
+                      fontFamily: '"Courier New", Courier, monospace',
                       fontSize: Math.round(14 * fontSize),
                       fontWeight: 700,
-                      color: 'var(--accent)',
+                      color: 'var(--chord-color)',
                       whiteSpace: 'pre',
-                      letterSpacing: Math.round(2 * fontSize) + 'px',
+                      letterSpacing: Math.round(1 * fontSize) + 'px',
                     }}
                   >
                     {line.content}
@@ -134,12 +131,12 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 </div>
                 {/* Lyric row rendered here so chord+lyric are one visual block */}
                 {hasLyricBelow && (
-                  <div style={{ marginBottom: Math.round(4 * fontSize) }}>
+                  <div style={{ marginBottom: Math.round(2 * fontSize) }}>
                     <span
                       style={{
                         fontSize: Math.round(17 * fontSize),
                         color: 'var(--text)',
-                        lineHeight: `${Math.round(26 * fontSize)}px`,
+                        lineHeight: `${Math.round(27 * fontSize)}px`,
                         whiteSpace: 'pre-wrap',
                       }}
                     >
@@ -154,14 +151,25 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           switch (line.type) {
             case 'section':
               return (
-                <div key={i} style={{ marginTop: Math.round(22 * fontSize), marginBottom: 4 }}>
+                <div
+                  key={i}
+                  style={{
+                    marginTop: Math.round(28 * fontSize),
+                    marginBottom: Math.round(8 * fontSize),
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                  }}
+                >
                   <span
                     style={{
-                      fontSize: Math.round(13 * fontSize),
+                      fontSize: Math.round(12 * fontSize),
                       fontWeight: 700,
-                      color: 'var(--text2)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.8px',
+                      color: 'var(--chord-color)',
+                      backgroundColor: 'color-mix(in srgb, var(--chord-color) 10%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--chord-color) 35%, transparent)',
+                      borderRadius: 4,
+                      padding: `${Math.round(2 * fontSize)}px ${Math.round(8 * fontSize)}px`,
+                      letterSpacing: '0.4px',
                     }}
                   >
                     {line.content}
@@ -174,12 +182,12 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               const prevLine = data[i - 1];
               if (prevLine?.type === 'chords') return null;
               return (
-                <div key={i} style={{ marginBottom: Math.round(4 * fontSize) }}>
+                <div key={i} style={{ marginBottom: Math.round(2 * fontSize) }}>
                   <span
                     style={{
                       fontSize: Math.round(17 * fontSize),
                       color: 'var(--text)',
-                      lineHeight: `${Math.round(26 * fontSize)}px`,
+                      lineHeight: `${Math.round(27 * fontSize)}px`,
                       whiteSpace: 'pre-wrap',
                     }}
                   >

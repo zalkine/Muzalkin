@@ -23,9 +23,9 @@ type Props = {
 // Component
 // ---------------------------------------------------------------------------
 
-const BASE_CHORD_SIZE  = 14;
-const BASE_LYRICS_SIZE = 16;
-const BASE_SECTION_SIZE = 13;
+const BASE_CHORD_SIZE   = 14;
+const BASE_LYRICS_SIZE  = 17;
+const BASE_SECTION_SIZE = 12;
 
 export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0 }: Props) {
   const isRTL = I18nManager.isRTL;
@@ -48,9 +48,17 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
           case 'section':
             return (
               <View key={index} style={styles.sectionRow}>
-                <Text style={[styles.sectionText, { fontSize: BASE_SECTION_SIZE * fontSize }, isRTL && styles.textRTL]}>
-                  {line.content}
-                </Text>
+                <View style={styles.sectionBadge}>
+                  <Text
+                    style={[
+                      styles.sectionText,
+                      { fontSize: BASE_SECTION_SIZE * fontSize },
+                      isRTL && styles.textRTL,
+                    ]}
+                  >
+                    {line.content}
+                  </Text>
+                </View>
               </View>
             );
 
@@ -58,7 +66,14 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
             return (
               <View key={index} style={styles.chordsRow}>
                 <Text
-                  style={[styles.chordsText, { fontSize: BASE_CHORD_SIZE * fontSize, lineHeight: BASE_CHORD_SIZE * fontSize * 1.45 }, isRTL && styles.textRTL]}
+                  style={[
+                    styles.chordsText,
+                    {
+                      fontSize: BASE_CHORD_SIZE * fontSize,
+                      lineHeight: BASE_CHORD_SIZE * fontSize * 1.4,
+                    },
+                    isRTL && styles.textRTL,
+                  ]}
                   selectable
                 >
                   {line.content}
@@ -70,7 +85,14 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
             return (
               <View key={index} style={styles.lyricsRow}>
                 <Text
-                  style={[styles.lyricsText, { fontSize: BASE_LYRICS_SIZE * fontSize, lineHeight: BASE_LYRICS_SIZE * fontSize * 1.5 }, isRTL && styles.textRTL]}
+                  style={[
+                    styles.lyricsText,
+                    {
+                      fontSize: BASE_LYRICS_SIZE * fontSize,
+                      lineHeight: BASE_LYRICS_SIZE * fontSize * 1.55,
+                    },
+                    isRTL && styles.textRTL,
+                  ]}
                   selectable
                 >
                   {line.content}
@@ -87,8 +109,10 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles — Tab4U-inspired: orange chords, badged section headers
 // ---------------------------------------------------------------------------
+
+const CHORD_ORANGE = '#e8640c';
 
 const styles = StyleSheet.create({
   scroll: {
@@ -96,32 +120,41 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     gap: 0,
   },
 
-  // Section header (e.g. "פזמון", "Chorus")
+  // Section header — orange badge (e.g. "פזמון", "Chorus")
   sectionRow: {
-    marginTop: 20,
-    marginBottom: 4,
+    marginTop: 24,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
+  },
+  sectionBadge: {
+    borderWidth: 1,
+    borderColor: CHORD_ORANGE,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(232,100,12,0.08)',
   },
   sectionText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#555',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: CHORD_ORANGE,
+    letterSpacing: 0.4,
   },
 
-  // Chord line — monospace, blue
+  // Chord line — monospace, Tab4U orange, tight above lyrics
   chordsRow: {
-    marginTop: 10,
+    marginTop: 14,
+    marginBottom: 1,
   },
   chordsText: {
     fontFamily: 'monospace',
     fontSize: 14,
     fontWeight: '700',
-    color: '#1a6fd4',
+    color: CHORD_ORANGE,
     lineHeight: 20,
   },
 
@@ -130,9 +163,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   lyricsText: {
-    fontSize: 16,
+    fontSize: 17,
     color: '#111',
-    lineHeight: 24,
+    lineHeight: 26,
   },
 
   // RTL text alignment
