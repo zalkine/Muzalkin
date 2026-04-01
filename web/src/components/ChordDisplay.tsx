@@ -4,7 +4,6 @@ import { forwardRef } from 'react';
 // Types
 // ---------------------------------------------------------------------------
 
-
 /** Legacy format — separate chord/lyric lines */
 export type ChordLineSimple = {
   type: 'chords' | 'lyrics' | 'section';
@@ -24,97 +23,6 @@ export type ChordLineInline = {
 export type ChordLine = ChordLineSimple | ChordLineInline;
 
 // ---------------------------------------------------------------------------
-// Inline conversion helpers
-// ---------------------------------------------------------------------------
-
-const CHORD_TOKEN_RE = /[A-G][#b]?(m|maj|min|sus[24]?|dim|aug|add\d+|[0-9])*(?:\/[A-G][#b]?)?/g;
-
-/**
- * Convert a chord string + lyric string into an inline segment line.
- * Chord character positions in the chord string determine which word each
- * chord sits above (Tab4U encodes positions this way for monospace display).
- */
-function simpleToInline(chordContent: string, lyricContent: string): ChordLineInline {
-  const chordEntries: Array<{ chord: string; pos: number }> = [];
-  CHORD_TOKEN_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CHORD_TOKEN_RE.exec(chordContent)) !== null) {
-    chordEntries.push({ chord: m[0], pos: m.index });
-  }
-
-  if (chordEntries.length === 0) {
-    return { type: 'line', segments: [{ chord: '', lyric: lyricContent }] };
-  }
-
-  // Find word start positions in the lyric (index of first non-space after a space, or index 0)
-  const wordStarts: number[] = [];
-  for (let i = 0; i < lyricContent.length; i++) {
-    if (lyricContent[i] !== ' ' && (i === 0 || lyricContent[i - 1] === ' ')) {
-      wordStarts.push(i);
-    }
-  }
-
-  if (wordStarts.length === 0) {
-    return { type: 'line', segments: chordEntries.map(e => ({ chord: e.chord, lyric: '' })) };
-  }
-
-  // Assign each chord to the first unused word start at or after its character position.
-  // This mirrors monospace alignment: chord at char N lands on the word starting at char N
-  // (or the next space-delimited word if that exact position isn't a word start).
-  const usedPos = new Set<number>();
-  const assignments: Array<{ chord: string; pos: number }> = [];
-
-  for (const entry of chordEntries) {
-    let wi = 0;
-    // Advance to first word start >= chord position
-    while (wi < wordStarts.length - 1 && wordStarts[wi] < entry.pos) wi++;
-    // Resolve collisions: if this word start is taken, move to next
-    while (usedPos.has(wordStarts[wi]) && wi < wordStarts.length - 1) wi++;
-    const pos = wordStarts[wi];
-    usedPos.add(pos);
-    assignments.push({ chord: entry.chord, pos });
-  }
-
-  assignments.sort((a, b) => a.pos - b.pos);
-
-  const segments: Array<{ chord: string; lyric: string }> = [];
-
-  if (assignments[0].pos > 0) {
-    segments.push({ chord: '', lyric: lyricContent.slice(0, assignments[0].pos) });
-  }
-  for (let i = 0; i < assignments.length; i++) {
-    const start = assignments[i].pos;
-    const end = i + 1 < assignments.length ? assignments[i + 1].pos : lyricContent.length;
-    segments.push({ chord: assignments[i].chord, lyric: lyricContent.slice(start, end) });
-  }
-
-  return { type: 'line', segments };
-}
-
-/**
- * Pre-process lines: convert consecutive {chords} + {lyrics} pairs into
- * inline segment lines so each chord floats above its word.
- */
-function toInlineFormat(data: ChordLine[]): ChordLine[] {
-  const result: ChordLine[] = [];
-  let i = 0;
-  while (i < data.length) {
-    const line = data[i];
-    if (line.type === 'chords') {
-      const next = data[i + 1];
-      if (next?.type === 'lyrics') {
-        result.push(simpleToInline(line.content, next.content));
-        i += 2;
-        continue;
-      }
-    }
-    result.push(line);
-    i++;
-  }
-  return result;
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -126,7 +34,6 @@ type Props = {
 
 const ChordDisplay = forwardRef<HTMLDivElement, Props>(
   ({ data, fontSize = 1, isRTL = false }, ref) => {
-    const processed = toInlineFormat(data);
 
     return (
       <div
@@ -137,7 +44,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           textAlign: isRTL ? 'right' : 'left',
         }}
       >
-        {processed.map((line, i) => {
+        {data.map((line, i) => {
           // ── Rich inline format ──────────────────────────────────────────
           if (line.type === 'line') {
             const { segments } = line;
@@ -149,12 +56,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  // row-reverse puts seg[0] on the RIGHT for RTL songs, matching
-                  // the Hebrew reading direction (first lyric word is rightmost).
-                  // direction:'ltr' overrides the inherited RTL so the flex engine
-                  // doesn't double-reverse the item order.
                   flexDirection: isRTL ? 'row-reverse' : 'row',
-                  direction: 'ltr',
                   flexWrap: 'wrap',
                   marginBottom: 4,
                   paddingTop: topPad,
@@ -164,7 +66,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {segments.map((seg, si) => (
                   <span
                     key={si}
-                    style={{ position: 'relative', display: 'inline-block', direction: isRTL ? 'rtl' : 'ltr' }}
+                    style={{ position: 'relative', display: 'inline-block' }}
                   >
                     {/* Chord floated above the lyric segment */}
                     {seg.chord?.trim() && (
