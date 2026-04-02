@@ -1,6 +1,35 @@
 import { forwardRef } from 'react';
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * For RTL songs, mirror a space-padded chord string so that chord positions
+ * match the mirrored lyric layout.
+ *
+ * e.g.  "  Em       C"  (LTR, 12 chars)
+ *    →  "C       Em  "  (RTL, 12 chars)
+ *
+ * Each chord token's left-offset is converted to an equivalent right-offset.
+ */
+function mirrorChordLine(content: string): string {
+  const totalLen = content.length;
+  const result = new Array<string>(totalLen).fill(' ');
+  const matches = [...content.matchAll(/[A-G][A-Za-z0-9#b/]*/g)];
+  for (const match of matches) {
+    const chord = match[0];
+    const startPos = match.index as number;
+    const newStart = totalLen - startPos - chord.length;
+    for (let i = 0; i < chord.length; i++) {
+      const idx = newStart + i;
+      if (idx >= 0 && idx < totalLen) result[idx] = chord[i];
+    }
+  }
+  return result.join('');
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -106,6 +135,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           if (line.type === 'chords') {
             const nextLine = data[i + 1];
             const hasLyricBelow = nextLine?.type === 'lyrics';
+            const chordContent = isRTL ? mirrorChordLine(line.content) : line.content;
             return (
               <div
                 key={i}
@@ -126,7 +156,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                       letterSpacing: Math.round(1 * fontSize) + 'px',
                     }}
                   >
-                    {line.content}
+                    {chordContent}
                   </span>
                 </div>
                 {/* Lyric row rendered here so chord+lyric are one visual block */}
