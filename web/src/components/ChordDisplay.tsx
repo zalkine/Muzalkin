@@ -81,6 +81,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                           color: 'var(--chord-color)',
                           whiteSpace: 'nowrap',
                           lineHeight: 1,
+                          direction: 'ltr',
+                          unicodeBidi: 'isolate',
                         }}
                       >
                         {seg.chord}

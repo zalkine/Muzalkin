@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
 import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
+import { normalizeChordData } from '../utils/chords';
 import StartJamModal from '../components/StartJamModal';
 
 // ---------------------------------------------------------------------------
@@ -557,7 +558,7 @@ export default function SongDetailPage() {
     );
   }
 
-  const displayData = applyTranspose(song.chords_data, semitones);
+  const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
