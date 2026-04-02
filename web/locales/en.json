@@ -13,5 +13,10 @@
   "share": "Share",
   "loading": "Loading...",
   "error_fetch": "Failed to load chords",
-  "auto_scroll": "Auto Scroll"
+  "auto_scroll": "Auto Scroll",
+  "app_name": "MuZalkin",
+  "font_size": "Font Size",
+  "back": "Back",
+  "hebrew_songs": "Hebrew Songs",
+  "english_songs": "English Songs"
 }
