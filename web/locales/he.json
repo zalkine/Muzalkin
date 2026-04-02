@@ -13,5 +13,10 @@
   "share": "שתף",
   "loading": "טוען...",
   "error_fetch": "שגיאה בטעינת האקורדים",
-  "auto_scroll": "גלילה אוטומטית"
+  "auto_scroll": "גלילה אוטומטית",
+  "app_name": "מוזלקין",
+  "font_size": "גודל גופן",
+  "back": "חזרה",
+  "hebrew_songs": "שירים בעברית",
+  "english_songs": "שירים באנגלית"
 }
