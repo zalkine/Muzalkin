@@ -57,7 +57,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  flexDirection: 'row',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   flexWrap: 'wrap',
                   marginBottom: Math.round(2 * fontSize),
                   paddingTop: hasAnyChord ? chordRowHeight : 0,
