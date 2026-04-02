@@ -1,35 +1,6 @@
 import { forwardRef } from 'react';
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * For RTL songs, mirror a space-padded chord string so that chord positions
- * match the mirrored lyric layout.
- *
- * e.g.  "  Em       C"  (LTR, 12 chars)
- *    →  "C       Em  "  (RTL, 12 chars)
- *
- * Each chord token's left-offset is converted to an equivalent right-offset.
- */
-function mirrorChordLine(content: string): string {
-  const totalLen = content.length;
-  const result = new Array<string>(totalLen).fill(' ');
-  const matches = [...content.matchAll(/[A-G][A-Za-z0-9#b/]*/g)];
-  for (const match of matches) {
-    const chord = match[0];
-    const startPos = match.index as number;
-    const newStart = totalLen - startPos - chord.length;
-    for (let i = 0; i < chord.length; i++) {
-      const idx = newStart + i;
-      if (idx >= 0 && idx < totalLen) result[idx] = chord[i];
-    }
-  }
-  return result.join('');
-}
-
-// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -135,7 +106,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           if (line.type === 'chords') {
             const nextLine = data[i + 1];
             const hasLyricBelow = nextLine?.type === 'lyrics';
-            const chordContent = isRTL ? mirrorChordLine(line.content) : line.content;
+            // Split into individual chord tokens. The DB stores them in RTL
+            // visual order (first token = rightmost chord). flex-direction:
+            // row-reverse places the first token on the right in RTL mode.
+            const chordTokens = line.content.trim().split(/\s+/).filter(Boolean);
             return (
               <div
                 key={i}
@@ -144,20 +118,28 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   marginBottom: 0,
                 }}
               >
-                {/* Chord row — orange, monospace, tight below */}
-                <div style={{ lineHeight: 1.2, marginBottom: Math.round(1 * fontSize) }}>
-                  <span
-                    style={{
-                      fontFamily: '"Courier New", Courier, monospace',
-                      fontSize: Math.round(14 * fontSize),
-                      fontWeight: 700,
-                      color: 'var(--chord-color)',
-                      whiteSpace: 'pre',
-                      letterSpacing: Math.round(1 * fontSize) + 'px',
-                    }}
-                  >
-                    {chordContent}
-                  </span>
+                {/* Chord row — tokens laid out in correct RTL/LTR order */}
+                <div style={{
+                  display: 'flex',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  justifyContent: 'flex-end',
+                  gap: Math.round(12 * fontSize),
+                  lineHeight: 1.2,
+                  marginBottom: Math.round(1 * fontSize),
+                }}>
+                  {chordTokens.map((chord, ci) => (
+                    <span
+                      key={ci}
+                      style={{
+                        fontFamily: '"Courier New", Courier, monospace',
+                        fontSize: Math.round(14 * fontSize),
+                        fontWeight: 700,
+                        color: 'var(--chord-color)',
+                      }}
+                    >
+                      {chord}
+                    </span>
+                  ))}
                 </div>
                 {/* Lyric row rendered here so chord+lyric are one visual block */}
                 {hasLyricBelow && (
