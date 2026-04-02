@@ -35,7 +35,7 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(webDist, 'index.html'));
 });
 
-// Bind to 0.0.0.0 for Cloud Run / Railway compatibility
+// Bind to 0.0.0.0 for Google Cloud compatibility
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`MuZalkin backend running on http://0.0.0.0:${PORT}`);
 });
