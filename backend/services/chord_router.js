@@ -199,23 +199,24 @@ async function searchChords(query, lang = 'he') {
  * On cache miss: scrapes, saves to cache, returns the cached_chords row.
  */
 async function fetchChordsForSong({ url, title, artist, source, lang }) {
-  // Check if already cached by URL
-  const { data: existing } = await getSupabase()
-    .from('cached_chords')
-    .select('*')
-    .eq('raw_url', url)
-    .limit(1)
-    .single();
+  // Check if already cached by URL (ignore Supabase errors — cache is best-effort)
+  try {
+    const { data: existing } = await getSupabase()
+      .from('cached_chords')
+      .select('*')
+      .eq('raw_url', url)
+      .limit(1)
+      .single();
 
-  if (existing) {
-    // Only use the cached version if it actually has chord lines.
-    // Entries cached by old buggy code may have only lyrics.
-    const hasChords = Array.isArray(existing.chords_data) &&
-      existing.chords_data.some(l => l.type === 'chords');
-    if (hasChords) return existing;
-    // Delete the bad entry so we re-scrape cleanly
-    console.log(`Re-scraping ${url} — cached entry had no chord lines`);
-    await getSupabase().from('cached_chords').delete().eq('id', existing.id);
+    if (existing) {
+      const hasChords = Array.isArray(existing.chords_data) &&
+        existing.chords_data.some(l => l.type === 'chords');
+      if (hasChords) return existing;
+      console.log(`Re-scraping ${url} — cached entry had no chord lines`);
+      await getSupabase().from('cached_chords').delete().eq('id', existing.id);
+    }
+  } catch (cacheErr) {
+    console.warn('Cache lookup skipped (Supabase unreachable):', cacheErr.message);
   }
 
   // fetch_chords.py returns a ChordLine[] array directly (not a wrapped object)
@@ -228,14 +229,16 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
 
   if (!Array.isArray(chordsArray) || chordsArray.length === 0) return null;
 
-  return saveToCache({
-    title,
-    artist,
-    lang,
-    source,
-    chordsData: chordsArray,
-    url,
-  });
+  // Try to cache — if Supabase is unreachable, still return the scraped data
+  try {
+    const cached = await saveToCache({ title, artist, lang, source, chordsData: chordsArray, url });
+    if (cached) return cached;
+  } catch (saveErr) {
+    console.warn('Cache save skipped (Supabase unreachable):', saveErr.message);
+  }
+
+  // Return scraped data directly without a cache ID
+  return { song_title: title, artist, language: lang, source, chords_data: chordsArray, raw_url: url };
 }
 
 /**
