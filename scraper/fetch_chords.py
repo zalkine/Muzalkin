@@ -71,13 +71,14 @@ def fetch_tab4u(url: str) -> list[dict]:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                text = cell.get_text(separator=" ").replace("\xa0", " ").strip()
-                # collapse multiple whitespace but keep single spaces between chords
-                text = re.sub(r"  +", "  ", text)
-                if text:
+                # Replace non-breaking spaces with regular spaces but preserve
+                # all spacing — the number of spaces encodes chord position
+                # relative to the lyric below.
+                text = cell.get_text(separator=" ").replace("\xa0", " ").rstrip()
+                if text.strip():
                     parts.append(text)
             content = "  ".join(parts)
-            if content:
+            if content.strip():
                 result.append({"type": "chords", "content": content})
             continue
 

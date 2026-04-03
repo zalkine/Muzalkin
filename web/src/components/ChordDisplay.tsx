@@ -57,7 +57,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexDirection: 'row',
                   flexWrap: 'wrap',
                   marginBottom: Math.round(2 * fontSize),
                   paddingTop: hasAnyChord ? chordRowHeight : 0,
@@ -123,8 +123,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {/* Chord row — tokens laid out in correct RTL/LTR order */}
                 <div style={{
                   display: 'flex',
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'flex-end',
+                  flexDirection: 'row',
+                  justifyContent: 'flex-start',
                   gap: Math.round(12 * fontSize),
                   lineHeight: 1.2,
                   marginBottom: Math.round(1 * fontSize),
