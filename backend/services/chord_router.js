@@ -224,6 +224,7 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
   }
 
   // fetch_chords.py returns a ChordLine[] array directly (not a wrapped object)
+  console.log(`[fetch] scraping source=${source} url=${url}`);
   let chordsArray = null;
   if (source === 'ultimate_guitar') {
     chordsArray = fetchUGByUrl(url);
@@ -231,6 +232,7 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     chordsArray = fetchTab4UByUrl(url);
   }
 
+  console.log(`[fetch] scraper returned:`, Array.isArray(chordsArray) ? `${chordsArray.length} lines` : chordsArray);
   if (!Array.isArray(chordsArray) || chordsArray.length === 0) return null;
 
   // Try to cache — if Supabase is unreachable, still return the scraped data
