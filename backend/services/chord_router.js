@@ -115,14 +115,18 @@ function runPythonScraper(scriptName, args) {
     return null;
   }
   if (result.status !== 0) {
-    console.error(`${scriptName} stderr:`, result.stderr);
+    console.error(`${scriptName} exited ${result.status}, stderr:`, result.stderr);
+    return null;
+  }
+  if (!result.stdout || !result.stdout.trim()) {
+    console.error(`${scriptName} returned empty output, stderr:`, result.stderr);
     return null;
   }
 
   try {
     return JSON.parse(result.stdout);
   } catch {
-    console.error(`${scriptName} returned invalid JSON`);
+    console.error(`${scriptName} returned invalid JSON:`, result.stdout.slice(0, 200));
     return null;
   }
 }
