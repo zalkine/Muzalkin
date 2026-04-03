@@ -50,50 +50,61 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           if (line.type === 'line') {
             const { segments } = line;
             const hasAnyChord = segments.some(s => s.chord?.trim());
-            const chordRowHeight = Math.round(22 * fontSize);
+            const chordHeight = Math.round(22 * fontSize);
 
             return (
               <div
                 key={i}
                 style={{
                   display: 'flex',
-                  flexDirection: 'row',
+                  // Explicit direction:ltr + row-reverse for RTL avoids
+                  // double-reversal from the inherited direction:rtl on the
+                  // outer container.
+                  direction: 'ltr',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   flexWrap: 'wrap',
                   marginBottom: Math.round(2 * fontSize),
-                  paddingTop: hasAnyChord ? chordRowHeight : 0,
-                  lineHeight: `${Math.round(26 * fontSize)}px`,
                 }}
               >
                 {segments.map((seg, si) => (
                   <span
                     key={si}
-                    style={{ position: 'relative', display: 'inline-block' }}
+                    style={{ display: 'inline-block', verticalAlign: 'top' }}
                   >
-                    {seg.chord?.trim() && (
+                    {/* Chord row — always rendered when any chord exists so
+                        all lyric rows stay vertically aligned */}
+                    {hasAnyChord && (
                       <span
                         style={{
-                          position: 'absolute',
-                          top: -chordRowHeight,
-                          [isRTL ? 'right' : 'left']: 0,
+                          display: 'block',
+                          // Align chord text to the reading-start edge of the
+                          // segment (right for RTL, left for LTR).
+                          textAlign: isRTL ? 'right' : 'left',
                           fontFamily: '"Courier New", Courier, monospace',
                           fontWeight: 700,
                           fontSize: Math.round(14 * fontSize),
-                          color: 'var(--chord-color)',
-                          whiteSpace: 'nowrap',
-                          lineHeight: 1,
+                          // Transparent keeps height/spacing when no chord
+                          color: seg.chord?.trim()
+                            ? 'var(--chord-color)'
+                            : 'transparent',
                           direction: 'ltr',
-                          unicodeBidi: 'isolate',
+                          whiteSpace: 'nowrap',
+                          height: chordHeight,
+                          lineHeight: `${chordHeight}px`,
                         }}
                       >
-                        {seg.chord}
+                        {seg.chord?.trim() || '\u00A0'}
                       </span>
                     )}
                     <span
                       style={{
+                        display: 'block',
                         fontSize: Math.round(16 * fontSize),
                         color: 'var(--text)',
-                        whiteSpace: 'pre-wrap',
+                        whiteSpace: 'pre',
                         lineHeight: `${Math.round(26 * fontSize)}px`,
+                        direction: isRTL ? 'rtl' : 'ltr',
+                        textAlign: isRTL ? 'right' : 'left',
                       }}
                     >
                       {seg.lyric}
