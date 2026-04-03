@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
 import { supabase } from '../lib/supabase';
@@ -224,6 +224,7 @@ const rowIconBtn: React.CSSProperties = {
 export default function SongDetailPage() {
   const { id }         = useParams<{ id: string }>();
   const navigate       = useNavigate();
+  const location       = useLocation();
   const { t, i18n }    = useTranslation();
   const session        = useSession();
   const jam            = useJam();
@@ -255,7 +256,15 @@ export default function SongDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
+    // If chord data was passed directly (Supabase unavailable), use it immediately
+    const stateData = (location.state as { song?: Song } | null)?.song;
+    if (stateData) {
+      setSong(stateData);
+      setIsRTL(detectLangFromContent((stateData.chords_data || [])) === 'he');
+      setLoading(false);
+      return;
+    }
+    if (!id || id === '_preview') return;
     supabase
       .from('cached_chords')
       .select('*')

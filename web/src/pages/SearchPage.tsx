@@ -82,7 +82,12 @@ export default function SearchPage() {
       });
       if (!resp.ok) throw new Error(`Fetch failed ${resp.status}`);
       const row = await resp.json();
-      navigate(`/song/${row.id}`);
+      if (row.id) {
+        navigate(`/song/${row.id}`);
+      } else {
+        // Supabase unavailable — pass chord data via navigation state
+        navigate(`/song/_preview`, { state: { song: row } });
+      }
     } catch {
       alert(t('error_fetch'));
     } finally {
