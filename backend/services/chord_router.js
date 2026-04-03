@@ -16,6 +16,8 @@ const path          = require('path');
 const { spawnSync } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
+console.log('[chord_router] v2 loaded, SUPABASE_SERVICE_KEY set:', !!process.env.SUPABASE_SERVICE_KEY);
+
 // Service-role client — required for writing to cached_chords
 // Deferred to avoid crashing at startup if env vars are not yet set
 function getSupabase() {
