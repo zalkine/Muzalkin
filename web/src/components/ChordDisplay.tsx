@@ -131,10 +131,13 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   marginBottom: 0,
                 }}
               >
-                {/* Chord row — tokens laid out in correct RTL/LTR order */}
+                {/* Chord row — same direction strategy as 'line' type:
+                    explicit direction:ltr + row-reverse for RTL avoids
+                    double-reversal from the inherited direction:rtl. */}
                 <div style={{
                   display: 'flex',
-                  flexDirection: 'row',
+                  direction: 'ltr',
+                  flexDirection: isRTL ? 'row-reverse' : 'row',
                   justifyContent: 'flex-start',
                   gap: Math.round(12 * fontSize),
                   lineHeight: 1.2,
@@ -181,12 +184,13 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   style={{
                     marginTop: Math.round(28 * fontSize),
                     marginBottom: Math.round(8 * fontSize),
-                    display: 'inline-flex',
-                    alignItems: 'center',
+                    textAlign: isRTL ? 'right' : 'left',
                   }}
                 >
                   <span
                     style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       fontSize: Math.round(12 * fontSize),
                       fontWeight: 700,
                       color: 'var(--chord-color)',
