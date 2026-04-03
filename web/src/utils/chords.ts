@@ -71,8 +71,9 @@ export function normalizeChordData(data: ChordLine[]): ChordLine[] {
         result.push(parseChordLyricPair(line.content, next.content));
         i += 2;
       } else {
-        // Chord-only line (e.g. intro riff with no lyric)
-        result.push(parseChordLyricPair(line.content, ''));
+        // Chord-only line (e.g. intro riff with no lyric) — keep as-is so
+        // ChordDisplay can render tokens in a proper horizontal row.
+        result.push(line);
         i++;
       }
       continue;
