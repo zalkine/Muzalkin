@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MuZalkin — Chord Display Test</title>
+<style>
+  :root {
+    --chord-color: #e8640c;
+    --text: #111111;
+    --text2: #666666;
+    --text3: #999999;
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+  }
+  .dark {
+    --chord-color: #f59e0b;
+    --text: #e8e8e8;
+    --text2: #aaaaaa;
+    --text3: #777777;
+    --bg: #1a1a1a;
+    --surface: #2a2a2a;
+    --border: #444444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    transition: background 0.2s, color 0.2s;
+  }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  h2 { font-size: 16px; color: var(--text2); margin: 24px 0 8px; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding: 12px; background: var(--surface); border-radius: 8px;
+    margin-bottom: 20px; border: 1px solid var(--border);
+  }
+  .toolbar label { font-size: 13px; color: var(--text2); }
+  button {
+    padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg); color: var(--text); cursor: pointer;
+    font-size: 14px; font-weight: 600;
+  }
+  button:hover { border-color: var(--chord-color); }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button.active { background: var(--chord-color); color: #fff; border-color: var(--chord-color); }
+  .sep { width: 1px; height: 24px; background: var(--border); }
+
+  /* Chord display */
+  .song-container {
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    background: var(--bg);
+  }
+  .chord-line-flex {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 2px;
+  }
+  .chord-block {
+    display: inline-block;
+    vertical-align: top;
+    unicode-bidi: isolate;
+  }
+  .show-borders .chord-block {
+    outline: 1px dotted rgba(232, 100, 12, 0.4);
+  }
+  .chord-label {
+    display: block;
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 700;
+    color: var(--chord-color);
+    direction: ltr;
+    unicode-bidi: isolate;
+    white-space: nowrap;
+  }
+  .chord-label.empty { color: transparent; }
+  .chord-text {
+    display: block;
+    color: var(--text);
+    white-space: pre;
+  }
+  .section-header {
+    margin-top: 28px;
+    margin-bottom: 8px;
+  }
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 700;
+    color: var(--chord-color);
+    background: color-mix(in srgb, var(--chord-color) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--chord-color) 35%, transparent);
+    border-radius: 4px;
+    letter-spacing: 0.4px;
+  }
+  .lyrics-only {
+    font-family: 'Courier New', Courier, monospace;
+    color: var(--text);
+    white-space: pre;
+  }
+</style>
+</head>
+<body>
+
+<h1>MuZalkin — Chord Display Test</h1>
+<p style="color: var(--text3); font-size: 13px; margin-bottom: 16px;">
+  Block-based BiDi-safe chord rendering with font size controls
+</p>
+
+<div class="toolbar" id="toolbar">
+  <label>Font:</label>
+  <button id="btnFontDown">A&minus;</button>
+  <span id="fontLabel" style="font-size:13px; min-width:36px; text-align:center; font-weight:700;">1.4x</span>
+  <button id="btnFontUp">A+</button>
+  <div class="sep"></div>
+  <button id="btnBorders">Show Borders</button>
+  <div class="sep"></div>
+  <button id="btnDark">Dark Mode</button>
+</div>
+
+<div id="songs"></div>
+
+<script>
+// ─── Chord parsing (ported from web/src/utils/chords.ts) ─────────────────
+const CHORD_TOKEN_RE = /[A-G][#b]?(m(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+)*(?:\/[A-G][#b]?)?/g;
+
+function parseChordLyricPair(chordLine, lyricLine) {
+  const matches = [];
+  CHORD_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = CHORD_TOKEN_RE.exec(chordLine)) !== null) {
+    matches.push({ chord: m[0], start: m.index });
+  }
+  if (matches.length === 0) {
+    return { type: 'line', segments: [{ chord: '', lyric: lyricLine }] };
+  }
+  const segments = [];
+  const lyricPrefix = lyricLine.slice(0, matches[0].start);
+  for (let i = 0; i < matches.length; i++) {
+    const lyricStart = matches[i].start;
+    const lyricEnd = i + 1 < matches.length ? matches[i + 1].start : undefined;
+    const lyric = lyricEnd !== undefined
+      ? lyricLine.slice(lyricStart, lyricEnd)
+      : lyricLine.slice(lyricStart);
+    segments.push({ chord: matches[i].chord, lyric });
+  }
+  if (lyricPrefix) {
+    segments[0] = { chord: segments[0].chord, lyric: lyricPrefix + segments[0].lyric };
+  }
+  return { type: 'line', segments };
+}
+
+function normalizeChordData(data) {
+  const result = [];
+  let i = 0;
+  while (i < data.length) {
+    const line = data[i];
+    if (line.type === 'chords') {
+      const next = data[i + 1];
+      if (next && next.type === 'lyrics') {
+        result.push(parseChordLyricPair(line.content, next.content));
+        i += 2;
+      } else {
+        result.push(line);
+        i++;
+      }
+      continue;
+    }
+    result.push(line);
+    i++;
+  }
+  return result;
+}
+
+// ─── Sample data ─────────────────────────────────────────────────────────
+const songs = [
+  {
+    title: 'מול חלון קטן — עידן רייכל',
+    isRTL: true,
+    data: [
+      { type: 'section', content: 'בית 1' },
+      { type: 'chords', content: 'Am          G          F' },
+      { type: 'lyrics', content: 'מול חלון קטן בשקיעת חמה' },
+      { type: 'chords', content: 'C           G          Am' },
+      { type: 'lyrics', content: 'ואני שר לך שיר אהבה' },
+      { type: 'section', content: 'פזמון' },
+      { type: 'chords', content: 'F           G          Am' },
+      { type: 'lyrics', content: 'כי את הכל שלי, את האור' },
+      { type: 'chords', content: 'F           G          C' },
+      { type: 'lyrics', content: 'את המנגינה של החיים' },
+    ]
+  },
+  {
+    title: 'Inline format test — D Dmaj7 Em',
+    isRTL: true,
+    data: [
+      { type: 'line', segments: [
+        { chord: 'D', lyric: 'שוב ' },
+        { chord: 'Dmaj7', lyric: 'אני מוצץ גבעול ' },
+        { chord: 'Em', lyric: 'עשב' },
+      ]},
+      { type: 'line', segments: [
+        { chord: 'A', lyric: 'ומביט ' },
+        { chord: 'F#m', lyric: 'אל האופק ' },
+        { chord: 'Bm', lyric: 'הרחוק' },
+      ]},
+    ]
+  },
+  {
+    title: 'Yesterday — The Beatles',
+    isRTL: false,
+    data: [
+      { type: 'section', content: 'Verse 1' },
+      { type: 'chords', content: 'G          F#m7       B7         Em' },
+      { type: 'lyrics', content: 'Yesterday  all my     troubles   seemed so far away' },
+      { type: 'chords', content: 'C          D7         G' },
+      { type: 'lyrics', content: "Now it     looks as   though they're here to stay" },
+      { type: 'section', content: 'Chorus' },
+      { type: 'chords', content: 'Em    A7        D' },
+      { type: 'lyrics', content: "Why   she had   to go" },
+      { type: 'chords', content: 'C     B7        Em' },
+      { type: 'lyrics', content: "I     don't     know, she wouldn't say" },
+    ]
+  },
+  {
+    title: 'Chord-only line test',
+    isRTL: false,
+    data: [
+      { type: 'section', content: 'Intro' },
+      { type: 'chords', content: 'Am   G   F   E' },
+      { type: 'section', content: 'Verse' },
+      { type: 'chords', content: 'Am         G          F          E' },
+      { type: 'lyrics', content: "Something  in the     way she    moves" },
+    ]
+  }
+];
+
+// ─── State ───────────────────────────────────────────────────────────────
+const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
+let fontSizeIdx = 3;
+let showBorders = false;
+let darkMode = false;
+
+// ─── Render ──────────────────────────────────────────────────────────────
+function render() {
+  const fontSize = FONT_SIZES[fontSizeIdx];
+  document.getElementById('fontLabel').textContent = fontSize + 'x';
+  document.getElementById('btnFontDown').disabled = fontSizeIdx <= 0;
+  document.getElementById('btnFontUp').disabled = fontSizeIdx >= FONT_SIZES.length - 1;
+  document.getElementById('btnBorders').classList.toggle('active', showBorders);
+  document.getElementById('btnDark').classList.toggle('active', darkMode);
+  document.body.classList.toggle('dark', darkMode);
+
+  const container = document.getElementById('songs');
+  container.innerHTML = '';
+
+  songs.forEach(song => {
+    const h2 = document.createElement('h2');
+    h2.textContent = song.title;
+    h2.style.textAlign = song.isRTL ? 'right' : 'left';
+    h2.style.direction = song.isRTL ? 'rtl' : 'ltr';
+    container.appendChild(h2);
+
+    const div = document.createElement('div');
+    div.className = 'song-container' + (showBorders ? ' show-borders' : '');
+    div.style.direction = song.isRTL ? 'rtl' : 'ltr';
+    div.style.textAlign = song.isRTL ? 'right' : 'left';
+
+    const normalized = normalizeChordData(song.data);
+
+    normalized.forEach((line, i) => {
+      if (line.type === 'line') {
+        renderInlineLine(div, line, fontSize, song.isRTL);
+      } else if (line.type === 'section') {
+        renderSection(div, line, fontSize, song.isRTL);
+      } else if (line.type === 'chords') {
+        // Chord-only line (no lyrics paired)
+        renderChordOnly(div, line, fontSize);
+      } else if (line.type === 'lyrics') {
+        // Standalone lyrics (shouldn't happen after normalize, but just in case)
+        renderLyricsOnly(div, line, fontSize, song.isRTL);
+      }
+    });
+
+    container.appendChild(div);
+  });
+}
+
+function renderInlineLine(parent, line, fontSize, isRTL) {
+  const segments = line.segments;
+  const hasAnyChord = segments.some(s => s.chord && s.chord.trim());
+  const chordHeight = Math.round(22 * fontSize);
+
+  const row = document.createElement('div');
+  row.className = 'chord-line-flex';
+  row.style.direction = 'ltr';
+  row.style.flexDirection = isRTL ? 'row-reverse' : 'row';
+  row.style.marginBottom = Math.round(2 * fontSize) + 'px';
+
+  segments.forEach(seg => {
+    const block = document.createElement('span');
+    block.className = 'chord-block';
+
+    if (hasAnyChord) {
+      const label = document.createElement('span');
+      label.className = 'chord-label' + (seg.chord && seg.chord.trim() ? '' : ' empty');
+      label.style.fontSize = Math.round(14 * fontSize) + 'px';
+      label.style.height = chordHeight + 'px';
+      label.style.lineHeight = chordHeight + 'px';
+      label.style.textAlign = isRTL ? 'right' : 'left';
+      label.textContent = (seg.chord && seg.chord.trim()) || '\u00A0';
+      block.appendChild(label);
+    }
+
+    const text = document.createElement('span');
+    text.className = 'chord-text';
+    text.style.fontSize = Math.round(16 * fontSize) + 'px';
+    text.style.lineHeight = Math.round(26 * fontSize) + 'px';
+    text.style.direction = isRTL ? 'rtl' : 'ltr';
+    text.style.textAlign = isRTL ? 'right' : 'left';
+    text.textContent = seg.lyric;
+    block.appendChild(text);
+
+    row.appendChild(block);
+  });
+
+  parent.appendChild(row);
+}
+
+function renderSection(parent, line, fontSize, isRTL) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'section-header';
+  wrapper.style.textAlign = isRTL ? 'right' : 'left';
+
+  const badge = document.createElement('span');
+  badge.className = 'section-badge';
+  badge.style.fontSize = Math.round(12 * fontSize) + 'px';
+  badge.style.padding = Math.round(2 * fontSize) + 'px ' + Math.round(8 * fontSize) + 'px';
+  badge.textContent = line.content;
+  wrapper.appendChild(badge);
+  parent.appendChild(wrapper);
+}
+
+function renderChordOnly(parent, line, fontSize) {
+  const div = document.createElement('div');
+  div.style.marginTop = Math.round(16 * fontSize) + 'px';
+  div.style.marginBottom = Math.round(2 * fontSize) + 'px';
+
+  const chordRow = document.createElement('div');
+  chordRow.style.fontFamily = '"Courier New", Courier, monospace';
+  chordRow.style.fontSize = Math.round(15 * fontSize) + 'px';
+  chordRow.style.fontWeight = '700';
+  chordRow.style.color = 'var(--chord-color)';
+  chordRow.style.whiteSpace = 'pre';
+  chordRow.style.direction = 'ltr';
+  chordRow.style.lineHeight = Math.round(15 * fontSize * 1.4) + 'px';
+  chordRow.textContent = line.content;
+  div.appendChild(chordRow);
+  parent.appendChild(div);
+}
+
+function renderLyricsOnly(parent, line, fontSize, isRTL) {
+  const div = document.createElement('div');
+  div.style.marginBottom = Math.round(2 * fontSize) + 'px';
+  const span = document.createElement('span');
+  span.className = 'lyrics-only';
+  span.style.fontSize = Math.round(15 * fontSize) + 'px';
+  span.style.lineHeight = Math.round(15 * fontSize * 1.55) + 'px';
+  span.style.direction = isRTL ? 'rtl' : 'ltr';
+  span.textContent = line.content;
+  div.appendChild(span);
+  parent.appendChild(div);
+}
+
+// ─── Event handlers ──────────────────────────────────────────────────────
+document.getElementById('btnFontDown').addEventListener('click', () => {
+  fontSizeIdx = Math.max(0, fontSizeIdx - 1);
+  render();
+});
+document.getElementById('btnFontUp').addEventListener('click', () => {
+  fontSizeIdx = Math.min(FONT_SIZES.length - 1, fontSizeIdx + 1);
+  render();
+});
+document.getElementById('btnBorders').addEventListener('click', () => {
+  showBorders = !showBorders;
+  render();
+});
+document.getElementById('btnDark').addEventListener('click', () => {
+  darkMode = !darkMode;
+  render();
+});
+
+// ─── Init ────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
