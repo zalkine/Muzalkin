@@ -71,13 +71,18 @@ def fetch_tab4u(url: str) -> list[dict]:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # Replace non-breaking spaces with regular spaces but preserve
-                # all spacing — the number of spaces encodes chord position
-                # relative to the lyric below.
-                text = cell.get_text(separator=" ").replace("\xa0", " ").rstrip()
+                # Use separator="" and keep \xa0 (\u00a0) intact.
+                # Tab4U pads chord cells with &nbsp; so that each chord's
+                # character position in the string matches the character
+                # position of the syllable it belongs to in the lyric below.
+                # Replacing \xa0 → ' ' or joining cells with "  " destroys
+                # that positional information.
+                text = cell.get_text(separator="").rstrip()
                 if text.strip():
                     parts.append(text)
-            content = "  ".join(parts)
+            # Join with no separator — the trailing \u00a0 padding inside each
+            # cell already encodes the gap to the next chord.
+            content = "".join(parts)
             if content.strip():
                 result.append({"type": "chords", "content": content})
             continue
