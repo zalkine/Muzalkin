@@ -69,7 +69,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {segments.map((seg, si) => (
                   <span
                     key={si}
-                    style={{ display: 'inline-block', verticalAlign: 'top' }}
+                    style={{ display: 'inline-block', verticalAlign: 'top', unicodeBidi: 'isolate' }}
                   >
                     {/* Chord row — always rendered when any chord exists so
                         all lyric rows stay vertically aligned */}
@@ -88,6 +88,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                             ? 'var(--chord-color)'
                             : 'transparent',
                           direction: 'ltr',
+                          unicodeBidi: 'isolate',
                           whiteSpace: 'nowrap',
                           height: chordHeight,
                           lineHeight: `${chordHeight}px`,

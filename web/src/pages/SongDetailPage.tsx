@@ -236,8 +236,9 @@ export default function SongDetailPage() {
   const [saving,   setSaving]   = useState(false);
   const [savedId,  setSavedId]  = useState<string | null>(null);
   const [semitones, setSemitones] = useState(0);
-  const [fontSize,  setFontSize]  = useState(1.4);
   const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
+  const [fontSizeIdx, setFontSizeIdx] = useState(3); // index of 1.4
+  const fontSize = FONT_SIZES[fontSizeIdx];
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollOffset  = useRef(0);
@@ -657,14 +658,14 @@ export default function SongDetailPage() {
           {/* Font size */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
-              style={{ ...toolBtnStyle, opacity: fontSize <= FONT_SIZES[0] ? 0.4 : 1 }}
-              onClick={() => setFontSize(s => FONT_SIZES[Math.max(0, FONT_SIZES.indexOf(s) - 1)])}
-              disabled={fontSize <= FONT_SIZES[0]}
+              style={{ ...toolBtnStyle, opacity: fontSizeIdx <= 0 ? 0.4 : 1 }}
+              onClick={() => setFontSizeIdx(i => Math.max(0, i - 1))}
+              disabled={fontSizeIdx <= 0}
             >A−</button>
             <button
-              style={{ ...toolBtnStyle, opacity: fontSize >= FONT_SIZES[FONT_SIZES.length - 1] ? 0.4 : 1 }}
-              onClick={() => setFontSize(s => FONT_SIZES[Math.min(FONT_SIZES.length - 1, FONT_SIZES.indexOf(s) + 1)])}
-              disabled={fontSize >= FONT_SIZES[FONT_SIZES.length - 1]}
+              style={{ ...toolBtnStyle, opacity: fontSizeIdx >= FONT_SIZES.length - 1 ? 0.4 : 1 }}
+              onClick={() => setFontSizeIdx(i => Math.min(FONT_SIZES.length - 1, i + 1))}
+              disabled={fontSizeIdx >= FONT_SIZES.length - 1}
             >A+</button>
           </div>
 
