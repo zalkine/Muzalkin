@@ -44,9 +44,11 @@ export function parseChordLyricPair(
     segments.push({ chord: matches[i].chord, lyric });
   }
 
-  // Any lyric text before the first chord is prepended to the first segment
+  // Any lyric text before the first chord gets its own chord-less prefix segment.
+  // This keeps each chord label above its exact syllable (not shifted right by
+  // the merged prefix as happened when we prepended it to segments[0]).
   if (lyricPrefix) {
-    segments[0] = { chord: segments[0].chord, lyric: lyricPrefix + segments[0].lyric };
+    segments.unshift({ chord: '', lyric: lyricPrefix });
   }
 
   return { type: 'line', segments };

@@ -71,13 +71,21 @@ def fetch_tab4u(url: str) -> list[dict]:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                text = cell.get_text(separator=" ").replace("\xa0", " ").strip()
-                # collapse multiple whitespace but keep single spaces between chords
-                text = re.sub(r"  +", "  ", text)
-                if text:
-                    parts.append(text)
-            content = "  ".join(parts)
-            if content:
+                # Use separator="" and keep \xa0 (\u00a0) intact.
+                # Tab4U pads chord cells with &nbsp; so that each chord's
+                # character position in the string matches the character
+                # position of the syllable it belongs to in the lyric below.
+                # Replacing \xa0 → ' ' or joining cells with "  " destroys
+                # that positional information.
+                # IMPORTANT: include ALL cells, even space/nbsp-only ones.
+                # Skipping empty cells removes the leading-space positional
+                # padding, causing chords to appear at the wrong syllable.
+                text = cell.get_text(separator="").rstrip()
+                parts.append(text)
+            # Join with no separator — the trailing \u00a0 padding inside each
+            # cell already encodes the gap to the next chord.
+            content = "".join(parts)
+            if content.strip():
                 result.append({"type": "chords", "content": content})
             continue
 
