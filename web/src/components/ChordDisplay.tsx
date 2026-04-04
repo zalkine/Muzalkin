@@ -119,57 +119,44 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           if (line.type === 'chords') {
             const nextLine = data[i + 1];
             const hasLyricBelow = nextLine?.type === 'lyrics';
-            // Split into individual chord tokens. The DB stores them in RTL
-            // visual order (first token = rightmost chord). flex-direction:
-            // row-reverse places the first token on the right in RTL mode.
-            const chordTokens = line.content.trim().split(/\s+/).filter(Boolean);
+            // Render chord content as-is with whiteSpace:'pre' so that the
+            // &nbsp; (\u00a0) characters from the scraper are preserved and
+            // position each chord exactly above its syllable.
+            // Both chord and lyric rows use the same monospace font and the
+            // same font size — the only way &nbsp; widths match across rows.
+            const MONO = '"Courier New", Courier, monospace';
+            const monoSize = Math.round(15 * fontSize);
             return (
               <div
                 key={i}
                 style={{
                   marginTop: Math.round(16 * fontSize),
-                  marginBottom: 0,
+                  marginBottom: Math.round(2 * fontSize),
                 }}
               >
-                {/* Chord row — same direction strategy as 'line' type:
-                    explicit direction:ltr + row-reverse for RTL avoids
-                    double-reversal from the inherited direction:rtl. */}
+                {/* Chord row — raw string, whiteSpace:pre preserves &nbsp; */}
                 <div style={{
-                  display: 'flex',
+                  fontFamily: MONO,
+                  fontSize: monoSize,
+                  fontWeight: 700,
+                  color: 'var(--chord-color)',
+                  whiteSpace: 'pre',
+                  lineHeight: `${Math.round(monoSize * 1.4)}px`,
                   direction: 'ltr',
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
-                  justifyContent: 'flex-start',
-                  gap: Math.round(12 * fontSize),
-                  lineHeight: 1.2,
-                  marginBottom: Math.round(1 * fontSize),
                 }}>
-                  {chordTokens.map((chord, ci) => (
-                    <span
-                      key={ci}
-                      style={{
-                        fontFamily: '"Courier New", Courier, monospace',
-                        fontSize: Math.round(14 * fontSize),
-                        fontWeight: 700,
-                        color: 'var(--chord-color)',
-                      }}
-                    >
-                      {chord}
-                    </span>
-                  ))}
+                  {line.content}
                 </div>
-                {/* Lyric row rendered here so chord+lyric are one visual block */}
+                {/* Lyric row — same monospace font + size so character widths match */}
                 {hasLyricBelow && (
-                  <div style={{ marginBottom: Math.round(2 * fontSize) }}>
-                    <span
-                      style={{
-                        fontSize: Math.round(17 * fontSize),
-                        color: 'var(--text)',
-                        lineHeight: `${Math.round(27 * fontSize)}px`,
-                        whiteSpace: 'pre-wrap',
-                      }}
-                    >
-                      {nextLine.content}
-                    </span>
+                  <div style={{
+                    fontFamily: MONO,
+                    fontSize: monoSize,
+                    color: 'var(--text)',
+                    whiteSpace: 'pre',
+                    lineHeight: `${Math.round(monoSize * 1.55)}px`,
+                    direction: isRTL ? 'rtl' : 'ltr',
+                  }}>
+                    {nextLine.content}
                   </div>
                 )}
               </div>
@@ -210,14 +197,17 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               // Skip if already rendered above by the preceding 'chords' block
               const prevLine = data[i - 1];
               if (prevLine?.type === 'chords') return null;
+              const monoSize = Math.round(15 * fontSize);
               return (
                 <div key={i} style={{ marginBottom: Math.round(2 * fontSize) }}>
                   <span
                     style={{
-                      fontSize: Math.round(17 * fontSize),
+                      fontFamily: '"Courier New", Courier, monospace',
+                      fontSize: monoSize,
                       color: 'var(--text)',
-                      lineHeight: `${Math.round(27 * fontSize)}px`,
-                      whiteSpace: 'pre-wrap',
+                      lineHeight: `${Math.round(monoSize * 1.55)}px`,
+                      whiteSpace: 'pre',
+                      direction: isRTL ? 'rtl' : 'ltr',
                     }}
                   >
                     {line.content}
