@@ -20,15 +20,59 @@ type Props = {
 };
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Group the flat ChordLine array into renderable blocks:
+ *   - A "pair" block: a chords line immediately followed by a lyrics line
+ *   - A "lyrics-only" block: a lyrics line with no preceding chords line
+ *   - A "chords-only" block: a chords line not followed by a lyrics line
+ *   - A "section" block: section header
+ */
+type Block =
+  | { kind: 'pair';        chords: string; lyrics: string }
+  | { kind: 'chords-only'; chords: string }
+  | { kind: 'lyrics-only'; lyrics: string }
+  | { kind: 'section';     content: string };
+
+function groupIntoBlocks(data: ChordLine[]): Block[] {
+  const blocks: Block[] = [];
+  let i = 0;
+  while (i < data.length) {
+    const line = data[i];
+    if (line.type === 'section') {
+      blocks.push({ kind: 'section', content: line.content });
+      i++;
+    } else if (line.type === 'chords') {
+      const next = data[i + 1];
+      if (next && next.type === 'lyrics') {
+        blocks.push({ kind: 'pair', chords: line.content, lyrics: next.content });
+        i += 2;
+      } else {
+        blocks.push({ kind: 'chords-only', chords: line.content });
+        i++;
+      }
+    } else {
+      // lyrics with no preceding chords line
+      blocks.push({ kind: 'lyrics-only', lyrics: line.content });
+      i++;
+    }
+  }
+  return blocks;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-const BASE_CHORD_SIZE   = 14;
-const BASE_LYRICS_SIZE  = 17;
+const BASE_SIZE         = 15;   // single size for BOTH chord and lyric rows
 const BASE_SECTION_SIZE = 12;
 
 export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0 }: Props) {
   const isRTL = I18nManager.isRTL;
+  const blocks = groupIntoBlocks(data);
+  const size = BASE_SIZE * fontSize;
 
   return (
     <ScrollView
@@ -43,8 +87,8 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
           : undefined
       }
     >
-      {data.map((line, index) => {
-        switch (line.type) {
+      {blocks.map((block, index) => {
+        switch (block.kind) {
           case 'section':
             return (
               <View key={index} style={styles.sectionRow}>
@@ -56,46 +100,68 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
                       isRTL && styles.textRTL,
                     ]}
                   >
-                    {line.content}
+                    {block.content}
                   </Text>
                 </View>
               </View>
             );
 
-          case 'chords':
+          case 'pair':
             return (
-              <View key={index} style={styles.chordsRow}>
+              <View key={index} style={styles.pairBlock}>
+                {/* Chord row — same monospace font + size as lyrics row below */}
                 <Text
                   style={[
                     styles.chordsText,
-                    {
-                      fontSize: BASE_CHORD_SIZE * fontSize,
-                      lineHeight: BASE_CHORD_SIZE * fontSize * 1.4,
-                    },
+                    { fontSize: size, lineHeight: size * 1.4 },
                     isRTL && styles.textRTL,
                   ]}
                   selectable
                 >
-                  {line.content}
+                  {block.chords}
+                </Text>
+                {/* Lyric row — same monospace font + size as chord row above */}
+                <Text
+                  style={[
+                    styles.lyricsText,
+                    { fontSize: size, lineHeight: size * 1.55 },
+                    isRTL && styles.textRTL,
+                  ]}
+                  selectable
+                >
+                  {block.lyrics}
                 </Text>
               </View>
             );
 
-          case 'lyrics':
+          case 'chords-only':
             return (
-              <View key={index} style={styles.lyricsRow}>
+              <View key={index} style={styles.pairBlock}>
                 <Text
                   style={[
-                    styles.lyricsText,
-                    {
-                      fontSize: BASE_LYRICS_SIZE * fontSize,
-                      lineHeight: BASE_LYRICS_SIZE * fontSize * 1.55,
-                    },
+                    styles.chordsText,
+                    { fontSize: size, lineHeight: size * 1.4 },
                     isRTL && styles.textRTL,
                   ]}
                   selectable
                 >
-                  {line.content}
+                  {block.chords}
+                </Text>
+              </View>
+            );
+
+          case 'lyrics-only':
+            return (
+              <View key={index} style={styles.lyricsOnlyBlock}>
+                <Text
+                  style={[
+                    styles.lyricsText,
+                    { fontSize: size, lineHeight: size * 1.55 },
+                    isRTL && styles.textRTL,
+                  ]}
+                  selectable
+                >
+                  {block.lyrics}
                 </Text>
               </View>
             );
@@ -109,10 +175,11 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
 }
 
 // ---------------------------------------------------------------------------
-// Styles — Tab4U-inspired: orange chords, badged section headers
+// Styles
 // ---------------------------------------------------------------------------
 
 const CHORD_ORANGE = '#e8640c';
+const MONO_FONT = 'monospace'; // Courier on iOS, monospace on Android — fixed-width guaranteed
 
 const styles = StyleSheet.create({
   scroll: {
@@ -145,27 +212,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
-  // Chord line — monospace, Tab4U orange, tight above lyrics
-  chordsRow: {
+  // Paired chord+lyric block
+  pairBlock: {
     marginTop: 14,
-    marginBottom: 1,
-  },
-  chordsText: {
-    fontFamily: 'monospace',
-    fontSize: 14,
-    fontWeight: '700',
-    color: CHORD_ORANGE,
-    lineHeight: 20,
-  },
-
-  // Lyric line — directly below its chord line
-  lyricsRow: {
     marginBottom: 2,
   },
+
+  // Chord row — monospace, orange
+  chordsText: {
+    fontFamily: MONO_FONT,
+    fontWeight: '700',
+    color: CHORD_ORANGE,
+  },
+
+  // Lyric row — SAME monospace font so &nbsp; widths match the chord row above
   lyricsText: {
-    fontSize: 17,
+    fontFamily: MONO_FONT,
     color: '#111',
-    lineHeight: 26,
+  },
+
+  // Standalone lyrics (no paired chord line)
+  lyricsOnlyBlock: {
+    marginBottom: 2,
   },
 
   // RTL text alignment
