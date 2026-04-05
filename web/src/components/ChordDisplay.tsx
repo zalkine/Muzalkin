@@ -57,11 +57,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 key={i}
                 style={{
                   display: 'flex',
-                  // Explicit direction:ltr + row-reverse for RTL avoids
-                  // double-reversal from the inherited direction:rtl on the
-                  // outer container.
-                  direction: 'ltr',
-                  flexDirection: isRTL ? 'row-reverse' : 'row',
+                  flexDirection: 'row',
                   flexWrap: 'wrap',
                   marginBottom: Math.round(2 * fontSize),
                 }}

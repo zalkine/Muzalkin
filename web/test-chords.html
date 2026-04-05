@@ -299,8 +299,7 @@ function renderInlineLine(parent, line, fontSize, isRTL) {
 
   const row = document.createElement('div');
   row.className = 'chord-line-flex';
-  row.style.direction = 'ltr';
-  row.style.flexDirection = isRTL ? 'row-reverse' : 'row';
+  row.style.flexDirection = 'row';
   row.style.marginBottom = Math.round(2 * fontSize) + 'px';
 
   segments.forEach(seg => {
