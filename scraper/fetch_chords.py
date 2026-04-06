@@ -159,11 +159,10 @@ def fetch_tab4u(url: str) -> dict:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # IMPORTANT: use rstrip('\n\r\t') NOT rstrip().
-                # rstrip() strips \xa0 (non-breaking space), which Tab4U uses
-                # to position each chord above its matching syllable in the
-                # lyric row below.  We must preserve that spacing.
-                text = cell.get_text(separator="").rstrip("\n\r\t")
+                # Strip only ASCII whitespace (\r\n\t\x20), NOT \xa0.
+                # \xa0 (non-breaking space) is used by Tab4U to position each
+                # chord above its matching syllable — must be preserved.
+                text = cell.get_text(separator="").strip("\r\n\t ")
                 if text.strip():           # only append non-blank cells
                     parts.append(text)
             # Join with no separator — trailing \xa0 inside each cell already
