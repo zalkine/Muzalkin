@@ -56,7 +56,7 @@ CREATE TABLE playlist_songs (
 CREATE TABLE cached_chords (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   song_title  text        NOT NULL,
-  artist      text        NOT NULL,
+  artist      text        NOT NULL DEFAULT '',  -- empty string when artist is unknown
   language    text        DEFAULT 'he' CHECK (language IN ('he', 'en')),
   source      text        NOT NULL CHECK (source IN ('tab4u', 'nagnu', 'negina', 'ultimate_guitar', 'chordify')),
   chords_data jsonb       NOT NULL,

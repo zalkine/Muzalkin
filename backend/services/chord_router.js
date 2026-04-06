@@ -80,7 +80,7 @@ async function saveToCache({ title, artist, lang, source, chordsData, url }) {
     .from('cached_chords')
     .insert({
       song_title:  title,
-      artist:      artist,
+      artist:      artist || '',
       language:    lang,
       source,
       chords_data: chordsData,
@@ -142,13 +142,21 @@ function searchUltimateGuitar(query) {
   return runPythonScraper('search.py', ['ug', query]) ?? [];
 }
 
-// Fetch and parse chords for a specific URL — returns ChordLine[] array
-function fetchTab4UByUrl(url) {
-  return runPythonScraper('fetch_chords.py', ['tab4u', url]);
-}
-
-function fetchUGByUrl(url) {
-  return runPythonScraper('fetch_chords.py', ['ultimate_guitar', url]);
+/**
+ * Fetch and parse chords for a specific URL.
+ * fetch_chords.py now returns a full object:
+ *   { title, artist, language, source, chords_data: ChordLine[] }
+ * Returns that object, or null on failure.
+ */
+function fetchByUrl(source, url) {
+  const src = source === 'ultimate_guitar' ? 'ultimate_guitar' : 'tab4u';
+  const raw = runPythonScraper('fetch_chords.py', [src, url]);
+  if (!raw) return null;
+  // Expected: { title, artist, language, source, chords_data }
+  if (raw && typeof raw === 'object' && Array.isArray(raw.chords_data)) return raw;
+  // Backward-compat: plain array (old scraper format)
+  if (Array.isArray(raw)) return { title: '', artist: '', language: null, source: src, chords_data: raw };
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -225,28 +233,45 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     console.warn('Cache lookup skipped (Supabase unreachable):', cacheErr.message);
   }
 
-  // fetch_chords.py returns a ChordLine[] array directly (not a wrapped object)
+  // fetch_chords.py returns { title, artist, language, source, chords_data }
   console.log(`[fetch] scraping source=${source} url=${url}`);
-  let chordsArray = null;
-  if (source === 'ultimate_guitar') {
-    chordsArray = fetchUGByUrl(url);
-  } else {
-    chordsArray = fetchTab4UByUrl(url);
-  }
+  const scraped = fetchByUrl(source, url);
 
-  console.log(`[fetch] scraper returned:`, Array.isArray(chordsArray) ? `${chordsArray.length} lines` : chordsArray);
-  if (!Array.isArray(chordsArray) || chordsArray.length === 0) return null;
+  console.log(`[fetch] scraper returned:`, scraped
+    ? `${scraped.chords_data?.length} lines, title='${scraped.title}', artist='${scraped.artist}'`
+    : 'null');
+
+  if (!scraped || !Array.isArray(scraped.chords_data) || scraped.chords_data.length === 0) return null;
+
+  // Prefer page-scraped metadata over URL-parsed values passed in
+  const finalTitle  = scraped.title    || title;
+  const finalArtist = scraped.artist   || artist;
+  const finalLang   = scraped.language || lang;
 
   // Try to cache — if Supabase is unreachable, still return the scraped data
   try {
-    const cached = await saveToCache({ title, artist, lang, source, chordsData: chordsArray, url });
+    const cached = await saveToCache({
+      title:      finalTitle,
+      artist:     finalArtist,
+      lang:       finalLang,
+      source,
+      chordsData: scraped.chords_data,
+      url,
+    });
     if (cached) return cached;
   } catch (saveErr) {
     console.warn('Cache save skipped (Supabase unreachable):', saveErr.message);
   }
 
   // Return scraped data directly without a cache ID
-  return { song_title: title, artist, language: lang, source, chords_data: chordsArray, raw_url: url };
+  return {
+    song_title:  finalTitle,
+    artist:      finalArtist,
+    language:    finalLang,
+    source,
+    chords_data: scraped.chords_data,
+    raw_url:     url,
+  };
 }
 
 /**
