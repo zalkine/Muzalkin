@@ -1,5 +1,9 @@
 // Initialize i18n before any screen renders
-import '../lib/i18n';
+try {
+  require('../lib/i18n');
+} catch (e) {
+  console.warn('[i18n] Failed to initialize:', e);
+}
 
 import { Stack } from 'expo-router';
 

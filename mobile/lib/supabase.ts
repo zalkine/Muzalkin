@@ -1,38 +1,75 @@
 import 'react-native-url-polyfill/auto';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
-import * as SecureStore from 'expo-secure-store';
-import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
 
 /**
- * SecureStore adapter for Supabase session persistence.
- * Uses expo-secure-store so tokens are kept in the device keychain/keystore,
- * not in plain AsyncStorage.
+ * Storage adapter for Supabase session persistence.
+ *
+ * We use AsyncStorage instead of SecureStore because:
+ * - SecureStore has a 2 KB value size limit on Android that can silently
+ *   truncate or fail to store Supabase JWT tokens (which are large).
+ * - AsyncStorage works reliably across all Expo Go environments.
+ *
+ * For web we fall back to localStorage; for SSR/Node we use an in-memory map.
  */
-const SecureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
-};
+function makeStorageAdapter() {
+  if (Platform.OS !== 'web') {
+    return {
+      getItem: (key: string) => AsyncStorage.getItem(key),
+      setItem: (key: string, value: string) => AsyncStorage.setItem(key, value),
+      removeItem: (key: string) => AsyncStorage.removeItem(key),
+    };
+  }
+  if (typeof localStorage !== 'undefined') {
+    return {
+      getItem: (key: string) => Promise.resolve(localStorage.getItem(key)),
+      setItem: (key: string, value: string) => {
+        localStorage.setItem(key, value);
+        return Promise.resolve();
+      },
+      removeItem: (key: string) => {
+        localStorage.removeItem(key);
+        return Promise.resolve();
+      },
+    };
+  }
+  // SSR / Node.js — in-memory only, no persistence
+  const store = new Map<string, string>();
+  return {
+    getItem: (key: string) => Promise.resolve(store.get(key) ?? null),
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+      return Promise.resolve();
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+      return Promise.resolve();
+    },
+  };
+}
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
+// Warn but don't throw — a throw here crashes the entire app before any screen renders,
+// making it impossible to show the user a helpful message.
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Missing Supabase environment variables. ' +
-      'Ensure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are set in your .env file.'
+  console.error(
+    '[supabase] Missing env vars: EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY not set.',
   );
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    storage: SecureStoreAdapter,
+    storage: makeStorageAdapter(),
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false, // required for React Native — no URL-based OAuth redirects
-    flowType: 'pkce',          // PKCE is the secure flow for mobile OAuth
+    detectSessionInUrl: false,
+    // React Native has no Navigator.locks API — provide a simple pass-through lock
+    // so Supabase doesn't time out trying to acquire a lock that will never resolve.
+    lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
   },
 });
 
@@ -41,36 +78,56 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ---------------------------------------------------------------------------
 
 /**
- * Opens the Google OAuth flow in the system browser.
- * Uses PKCE: the callback screen (or this function on return) exchanges the
- * one-time code for a session via `exchangeCodeForSession`.
+ * Creates a new anonymous user with the given display name.
+ *
+ * Uses Supabase anonymous auth — no email, password, or OAuth required.
+ * The session is persisted to AsyncStorage just like a regular session,
+ * so the user stays logged in across app restarts.
+ *
+ * Prerequisites (one-time Supabase setup):
+ *   1. Enable Anonymous sign-ins: Dashboard → Authentication → Sign In Methods
+ *   2. Make email nullable: ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
  */
-export async function signInWithGoogle(): Promise<void> {
-  // Deep-link that the browser will redirect back to after OAuth
-  const redirectTo = Linking.createURL('auth/callback');
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true, // we open the browser manually below
-    },
-  });
-
+export async function createAnonUser(displayName: string): Promise<void> {
+  const { data: { user }, error } = await supabase.auth.signInAnonymously();
   if (error) throw error;
-  if (!data.url) throw new Error('No OAuth URL returned from Supabase');
+  if (!user) throw new Error('No user returned from anonymous sign-in');
 
-  // Open the OAuth URL and wait for the redirect back to the app
-  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  const { error: dbError } = await supabase.from('users').upsert({
+    id:           user.id,
+    display_name: displayName.trim(),
+    language:     'he',
+  });
+  if (dbError) throw dbError;
+}
 
-  if (result.type === 'success') {
-    const callbackUrl = new URL(result.url);
-    const code = callbackUrl.searchParams.get('code');
-    if (code) {
-      const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-      if (sessionError) throw sessionError;
-    }
-  }
+/**
+ * Updates the display name of the currently authenticated user.
+ */
+export async function updateDisplayName(displayName: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('users')
+    .update({ display_name: displayName.trim() })
+    .eq('id', user.id);
+  if (error) throw error;
+}
+
+/**
+ * Returns the display name of the currently authenticated user, or null.
+ */
+export async function getDisplayName(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data } = await supabase
+    .from('users')
+    .select('display_name')
+    .eq('id', user.id)
+    .single();
+  return data?.display_name ?? null;
 }
 
 /** Signs the current user out and clears the persisted session. */

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { router } from 'expo-router';
+import i18next from 'i18next';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,27 +28,19 @@ type SearchResult = {
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 // ---------------------------------------------------------------------------
-// Mock data — replace this function with the real chord_router / Supabase call
+// Real search — calls backend (cache-first, scrapes if needed)
 // ---------------------------------------------------------------------------
 
-const MOCK_DATA: SearchResult[] = [
-  { id: '1', title: 'לאט לאט',         artist: 'עידן רייכל' },
-  { id: '2', title: 'קיצות',            artist: 'מוקי' },
-  { id: '3', title: 'משהו מתוק',        artist: 'שלמה ארצי' },
-  { id: '4', title: 'Wonderwall',       artist: 'Oasis' },
-  { id: '5', title: 'Hotel California', artist: 'Eagles' },
-  { id: '6', title: 'Let Her Go',       artist: 'Passenger' },
-];
-
 async function fetchSearchResults(query: string): Promise<SearchResult[]> {
-  // TODO: replace with real search — check cached_chords, then scrape via chord_router
-  await new Promise((r) => setTimeout(r, 700)); // simulate latency
-  const q = query.trim().toLowerCase();
-  return MOCK_DATA.filter(
-    (r) =>
-      r.title.toLowerCase().includes(q) ||
-      r.artist.toLowerCase().includes(q)
-  );
+  const lang = i18next.language === 'he' ? 'he' : 'en';
+  const backendUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
+  const url = `${backendUrl}/api/chords/search?q=${encodeURIComponent(query.trim())}&lang=${lang}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Backend error ${resp.status}`);
+
+  const data: Array<{ id: string; song_title: string; artist: string }> = await resp.json();
+  return data.map((r) => ({ id: r.id, title: r.song_title, artist: r.artist }));
 }
 
 // ---------------------------------------------------------------------------
