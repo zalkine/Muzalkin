@@ -110,21 +110,27 @@ def fetch_tab4u(url: str) -> dict:
     h1 = soup.find("h1")
     if h1:
         title = h1.get_text(strip=True)
-        # Strip site-appended suffixes like "שיר לשלום - אקורדים | Tab4U"
-        title = re.sub(r"\s*[-–|]\s*אקורדים.*$", "", title, flags=re.I).strip()
-        title = re.sub(r"\s*[-–|]\s*chords.*$",   "", title, flags=re.I).strip()
-        title = re.sub(r"\s*\|.*$",                "", title).strip()
+        # Handle "אקורדים לשיר TITLE שלARTIST" prefix pattern (Tab4U Hebrew pages)
+        m = re.match(r"^אקורדים לשיר\s+(.+?)\s+של.+$", title)
+        if m:
+            title = m.group(1).strip()
+        else:
+            # Strip site-appended suffixes like "שיר לשלום - אקורדים | Tab4U"
+            title = re.sub(r"\s*[-–|]\s*אקורדים.*$", "", title, flags=re.I).strip()
+            title = re.sub(r"\s*[-–|]\s*chords.*$",   "", title, flags=re.I).strip()
+            title = re.sub(r"\s*\|.*$",                "", title).strip()
 
     # ── Extract artist ─────────────────────────────────────────────────────
     artist = ""
     artist_tag = soup.select_one(
         "span.artist_name, a.artist_link, "
-        "span[itemprop='byArtist'], a[itemprop='byArtist']"
+        "span[itemprop='byArtist'], a[itemprop='byArtist'], "
+        "h2.moreSongH2"
     )
     if artist_tag:
         artist = artist_tag.get_text(strip=True)
     else:
-        # Fallback: second <h2> sometimes holds the artist name
+        # Fallback: first <h2> sometimes holds the artist name
         h2 = soup.find("h2")
         if h2:
             candidate = h2.get_text(strip=True)
@@ -133,6 +139,10 @@ def fetch_tab4u(url: str) -> dict:
                 r"^(פזמון|בית|גשר|קודה|אינטרו|chorus|verse|bridge|intro)", candidate, re.I
             ):
                 artist = candidate
+
+    # Strip trailing navigation suffixes like "קלפטר- שירים נוספים"
+    if artist:
+        artist = re.sub(r"[-–]\s*(שירים נוספים|עוד שירים|אקורדים).*$", "", artist).strip()
 
     # ── Parse chord content ────────────────────────────────────────────────
     tpl = soup.find(id="songContentTPL")
