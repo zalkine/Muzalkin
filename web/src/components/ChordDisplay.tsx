@@ -34,6 +34,8 @@ type Props = {
 
 const ChordDisplay = forwardRef<HTMLDivElement, Props>(
   ({ data, fontSize = 1, isRTL = false }, ref) => {
+    // TEMP DEBUG — remove after diagnosis
+    console.log('[ChordDisplay] isRTL=', isRTL, 'first 4 lines=', JSON.stringify(data.slice(0, 4)));
 
     return (
       <div
