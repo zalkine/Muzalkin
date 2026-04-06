@@ -567,7 +567,7 @@ export default function SongDetailPage() {
     );
   }
 
-  const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones));
+  const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones), isRTL);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>

@@ -7,18 +7,26 @@ const CHORD_TOKEN_RE =
 /**
  * Parse a chord line + lyric line into a segment-based ChordLineInline.
  *
- * Each chord's position (column index) in the chord line is used to slice
- * the lyric line at the same column, producing segments like:
- *   { chord: 'Am', lyric: 'מול חלון ק' }
- *   { chord: 'G',  lyric: 'טן בשקיעת'  }
- *   { chord: 'F',  lyric: 'חמה'         }
+ * LTR (English, Ultimate Guitar):
+ *   Chord position P in the string aligns directly with lyric position P.
  *
- * When rendered with flexDirection: row-reverse (RTL), the first segment ends
- * up on the right — exactly where the first Hebrew word appears.
+ * RTL (Hebrew, Tab4U):
+ *   Tab4U renders chord rows as  direction:ltr / text-align:right  so the
+ *   LAST character of the chord string is at the right edge.  The chord at
+ *   string index P therefore sits at (chordLine.length − 1 − P) columns
+ *   from the right edge, which is exactly lyric column Q = L−1−P (same
+ *   monospace font, same cell width).
+ *
+ *   After mapping every chord to its lyric column Q we sort ascending by Q
+ *   (= right-to-left reading order) and slice the lyric at those Q positions.
+ *   The segments are returned in RTL reading order so that ChordDisplay can
+ *   render them with flexDirection:row-reverse and have segment[0] land on
+ *   the far right.
  */
 export function parseChordLyricPair(
   chordLine: string,
   lyricLine: string,
+  isRTL = false,
 ): ChordLineInline {
   const matches: Array<{ chord: string; start: number }> = [];
   CHORD_TOKEN_RE.lastIndex = 0;
@@ -31,6 +39,33 @@ export function parseChordLyricPair(
     return { type: 'line', segments: [{ chord: '', lyric: lyricLine }] };
   }
 
+  if (isRTL) {
+    const L = chordLine.length;
+    // Map each chord's string position P → lyric column Q = L−1−P,
+    // then sort ascending by Q (rightmost lyric position first).
+    const mapped = matches
+      .map(({ chord, start }) => ({ chord, lyricPos: L - 1 - start }))
+      .sort((a, b) => a.lyricPos - b.lyricPos);
+
+    const segments: ChordLineInline['segments'] = [];
+    const prefixLen = mapped[0].lyricPos;
+    if (prefixLen > 0) {
+      segments.push({ chord: '', lyric: lyricLine.slice(0, prefixLen) });
+    }
+    for (let i = 0; i < mapped.length; i++) {
+      const lyricStart = mapped[i].lyricPos;
+      const lyricEnd = i + 1 < mapped.length ? mapped[i + 1].lyricPos : undefined;
+      segments.push({
+        chord: mapped[i].chord,
+        lyric: lyricEnd !== undefined
+          ? lyricLine.slice(lyricStart, lyricEnd)
+          : lyricLine.slice(lyricStart),
+      });
+    }
+    return { type: 'line', segments };
+  }
+
+  // ── LTR path ────────────────────────────────────────────────────────────
   const segments: ChordLineInline['segments'] = [];
   const lyricPrefix = lyricLine.slice(0, matches[0].start);
 
@@ -59,7 +94,7 @@ export function parseChordLyricPair(
  * Sections and standalone lyric lines are passed through unchanged.
  * Data already in 'line' format is also passed through unchanged.
  */
-export function normalizeChordData(data: ChordLine[]): ChordLine[] {
+export function normalizeChordData(data: ChordLine[], isRTL = false): ChordLine[] {
   const result: ChordLine[] = [];
   let i = 0;
 
@@ -69,7 +104,7 @@ export function normalizeChordData(data: ChordLine[]): ChordLine[] {
     if (line.type === 'chords') {
       const next = data[i + 1];
       if (next?.type === 'lyrics') {
-        result.push(parseChordLyricPair(line.content, next.content));
+        result.push(parseChordLyricPair(line.content, next.content, isRTL));
         i += 2;
       } else {
         // Chord-only line (e.g. intro riff with no lyric) — keep as-is so
