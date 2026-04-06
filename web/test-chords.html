@@ -13,6 +13,7 @@
     --bg: #ffffff;
     --surface: #f5f5f5;
     --border: #e0e0e0;
+    --accent: #e8640c;
   }
   .dark {
     --chord-color: #f59e0b;
@@ -22,6 +23,7 @@
     --bg: #1a1a1a;
     --surface: #2a2a2a;
     --border: #444444;
+    --accent: #f59e0b;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -33,6 +35,7 @@
   }
   h1 { font-size: 22px; margin-bottom: 8px; }
   h2 { font-size: 16px; color: var(--text2); margin: 24px 0 8px; }
+  h3 { font-size: 14px; color: var(--text3); margin: 16px 0 8px; }
   .toolbar {
     display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
     padding: 12px; background: var(--surface); border-radius: 8px;
@@ -48,6 +51,44 @@
   button:disabled { opacity: 0.35; cursor: default; }
   button.active { background: var(--chord-color); color: #fff; border-color: var(--chord-color); }
   .sep { width: 1px; height: 24px; background: var(--border); }
+  input[type="text"] {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg); color: var(--text); font-size: 14px; outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+
+  /* Search */
+  .search-box {
+    padding: 16px; background: var(--surface); border-radius: 8px;
+    margin-bottom: 20px; border: 1px solid var(--border);
+  }
+  .search-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .search-row input[type="text"] { flex: 1; min-width: 150px; }
+  .results-list { margin-top: 12px; }
+  .result-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px;
+    margin-bottom: 6px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .result-item:hover { border-color: var(--accent); }
+  .result-title { font-weight: 600; font-size: 14px; }
+  .result-artist { font-size: 13px; color: var(--text2); }
+  .result-source {
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent); font-weight: 600;
+  }
+  .result-arrow { margin-right: auto; color: var(--text3); font-size: 18px; }
+  .loading { color: var(--text3); font-size: 13px; padding: 8px 0; }
+  .error { color: #e53e3e; font-size: 13px; padding: 8px 0; }
+
+  /* Fetched song */
+  .fetched-song-header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 12px; direction: rtl;
+  }
+  .fetched-song-title { font-size: 18px; font-weight: 700; }
+  .fetched-song-artist { font-size: 14px; color: var(--text2); }
 
   /* Chord display */
   .song-container {
@@ -104,15 +145,42 @@
     color: var(--text);
     white-space: pre;
   }
+  .divider {
+    border: none; border-top: 1px dashed var(--border);
+    margin: 32px 0 16px;
+  }
 </style>
 </head>
 <body>
 
 <h1>MuZalkin — Chord Display Test</h1>
 <p style="color: var(--text3); font-size: 13px; margin-bottom: 16px;">
-  Block-based BiDi-safe chord rendering with font size controls
+  Block-based BiDi-safe chord rendering — search real songs or view samples below
 </p>
 
+<!-- ─── Search Box ──────────────────────────────────────────────────────── -->
+<div class="search-box">
+  <div class="search-row" style="margin-bottom: 8px;">
+    <label style="font-size: 12px; color: var(--text3);">Backend URL:</label>
+    <input type="text" id="backendUrl" value="http://localhost:3001" style="flex:1; font-size: 12px;">
+  </div>
+  <div class="search-row">
+    <input type="text" id="searchInput" placeholder="Search songs..." dir="auto">
+    <button id="btnLangHe" class="active" onclick="setLang('he')">עברית</button>
+    <button id="btnLangEn" onclick="setLang('en')">English</button>
+    <button id="btnSearch" onclick="doSearch()">Search</button>
+  </div>
+  <div id="searchStatus"></div>
+  <div id="searchResults" class="results-list"></div>
+</div>
+
+<!-- ─── Fetched Song Display ────────────────────────────────────────────── -->
+<div id="fetchedSongArea" style="display:none;">
+  <div id="fetchedSongHeader" class="fetched-song-header"></div>
+  <div id="fetchedSongChords"></div>
+</div>
+
+<!-- ─── Display Toolbar ─────────────────────────────────────────────────── -->
 <div class="toolbar" id="toolbar">
   <label>Font:</label>
   <button id="btnFontDown">A&minus;</button>
@@ -124,6 +192,9 @@
   <button id="btnDark">Dark Mode</button>
 </div>
 
+<!-- ─── Sample Songs ────────────────────────────────────────────────────── -->
+<hr class="divider">
+<h3>Sample songs (hardcoded)</h3>
 <div id="songs"></div>
 
 <script>
@@ -178,8 +249,170 @@ function normalizeChordData(data) {
   return result;
 }
 
+// ─── Search state ────────────────────────────────────────────────────────
+let searchLang = 'he';
+let searchResults = [];
+let fetchedSong = null;
+
+function setLang(lang) {
+  searchLang = lang;
+  document.getElementById('btnLangHe').classList.toggle('active', lang === 'he');
+  document.getElementById('btnLangEn').classList.toggle('active', lang === 'en');
+  document.getElementById('searchInput').placeholder =
+    lang === 'he' ? '...חפש שירים' : 'Search songs...';
+}
+
+async function doSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) return;
+  const backendUrl = document.getElementById('backendUrl').value.trim();
+  const statusEl = document.getElementById('searchStatus');
+  const resultsEl = document.getElementById('searchResults');
+
+  statusEl.innerHTML = '<div class="loading">Searching...</div>';
+  resultsEl.innerHTML = '';
+  searchResults = [];
+
+  try {
+    const res = await fetch(
+      `${backendUrl}/api/chords/search?q=${encodeURIComponent(query)}&lang=${searchLang}`
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    searchResults = await res.json();
+
+    if (searchResults.length === 0) {
+      statusEl.innerHTML = '<div class="loading">No results found</div>';
+      return;
+    }
+    statusEl.innerHTML = `<div class="loading">${searchResults.length} results</div>`;
+    renderSearchResults();
+  } catch (err) {
+    statusEl.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+  }
+}
+
+function renderSearchResults() {
+  const el = document.getElementById('searchResults');
+  el.innerHTML = '';
+  searchResults.forEach((r, idx) => {
+    const item = document.createElement('div');
+    item.className = 'result-item';
+    item.onclick = () => fetchSong(idx);
+    item.innerHTML = `
+      <div>
+        <div class="result-title">${esc(r.song_title || r.title)}</div>
+        <div class="result-artist">${esc(r.artist)}</div>
+      </div>
+      <span class="result-source">${esc(r.source)}</span>
+      <span class="result-arrow">&rarr;</span>
+    `;
+    el.appendChild(item);
+  });
+}
+
+async function fetchSong(idx) {
+  const r = searchResults[idx];
+  const backendUrl = document.getElementById('backendUrl').value.trim();
+  const statusEl = document.getElementById('searchStatus');
+
+  statusEl.innerHTML = `<div class="loading">Loading chords for "${esc(r.song_title || r.title)}"...</div>`;
+
+  try {
+    let data;
+    if (r.id) {
+      // Cached — fetch by ID
+      const res = await fetch(`${backendUrl}/api/chords/${r.id}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } else {
+      // Uncached — scrape
+      const res = await fetch(`${backendUrl}/api/chords/fetch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: r.source_url,
+          title: r.song_title || r.title,
+          artist: r.artist,
+          source: r.source,
+          lang: r.language || searchLang,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    }
+
+    if (!data.chords_data || !data.chords_data.length) {
+      statusEl.innerHTML = '<div class="error">No chord data returned</div>';
+      return;
+    }
+
+    fetchedSong = {
+      title: data.song_title || r.song_title || r.title,
+      artist: data.artist || r.artist,
+      language: data.language || r.language || searchLang,
+      chords_data: data.chords_data,
+    };
+    statusEl.innerHTML = '';
+    renderFetchedSong();
+  } catch (err) {
+    statusEl.innerHTML = `<div class="error">Fetch error: ${err.message}</div>`;
+  }
+}
+
+function renderFetchedSong() {
+  if (!fetchedSong) return;
+  const area = document.getElementById('fetchedSongArea');
+  area.style.display = 'block';
+
+  const isRTL = fetchedSong.language === 'he';
+
+  // Header
+  const header = document.getElementById('fetchedSongHeader');
+  header.style.direction = isRTL ? 'rtl' : 'ltr';
+  header.style.textAlign = isRTL ? 'right' : 'left';
+  header.innerHTML = `
+    <span class="fetched-song-title">${esc(fetchedSong.title)}</span>
+    <span class="fetched-song-artist">${esc(fetchedSong.artist)}</span>
+    <span class="result-source">${esc(fetchedSong.language)}</span>
+  `;
+
+  // Chords
+  const container = document.getElementById('fetchedSongChords');
+  container.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'song-container' + (showBorders ? ' show-borders' : '');
+  div.style.direction = isRTL ? 'rtl' : 'ltr';
+  div.style.textAlign = isRTL ? 'right' : 'left';
+
+  const fontSize = FONT_SIZES[fontSizeIdx];
+  const normalized = normalizeChordData(fetchedSong.chords_data);
+
+  normalized.forEach(line => {
+    if (line.type === 'line') {
+      renderInlineLine(div, line, fontSize, isRTL);
+    } else if (line.type === 'section') {
+      renderSection(div, line, fontSize, isRTL);
+    } else if (line.type === 'chords') {
+      renderChordOnly(div, line, fontSize);
+    } else if (line.type === 'lyrics') {
+      renderLyricsOnly(div, line, fontSize, isRTL);
+    }
+  });
+
+  container.appendChild(div);
+
+  // Scroll to it
+  area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
 // ─── Sample data ─────────────────────────────────────────────────────────
-const songs = [
+const sampleSongs = [
   {
     title: 'מול חלון קטן — עידן רייכל',
     isRTL: true,
@@ -228,17 +461,6 @@ const songs = [
       { type: 'lyrics', content: "I     don't     know, she wouldn't say" },
     ]
   },
-  {
-    title: 'Chord-only line test',
-    isRTL: false,
-    data: [
-      { type: 'section', content: 'Intro' },
-      { type: 'chords', content: 'Am   G   F   E' },
-      { type: 'section', content: 'Verse' },
-      { type: 'chords', content: 'Am         G          F          E' },
-      { type: 'lyrics', content: "Something  in the     way she    moves" },
-    ]
-  }
 ];
 
 // ─── State ───────────────────────────────────────────────────────────────
@@ -257,10 +479,14 @@ function render() {
   document.getElementById('btnDark').classList.toggle('active', darkMode);
   document.body.classList.toggle('dark', darkMode);
 
+  // Re-render fetched song if exists
+  if (fetchedSong) renderFetchedSong();
+
+  // Render sample songs
   const container = document.getElementById('songs');
   container.innerHTML = '';
 
-  songs.forEach(song => {
+  sampleSongs.forEach(song => {
     const h2 = document.createElement('h2');
     h2.textContent = song.title;
     h2.style.textAlign = song.isRTL ? 'right' : 'left';
@@ -274,16 +500,14 @@ function render() {
 
     const normalized = normalizeChordData(song.data);
 
-    normalized.forEach((line, i) => {
+    normalized.forEach(line => {
       if (line.type === 'line') {
         renderInlineLine(div, line, fontSize, song.isRTL);
       } else if (line.type === 'section') {
         renderSection(div, line, fontSize, song.isRTL);
       } else if (line.type === 'chords') {
-        // Chord-only line (no lyrics paired)
         renderChordOnly(div, line, fontSize);
       } else if (line.type === 'lyrics') {
-        // Standalone lyrics (shouldn't happen after normalize, but just in case)
         renderLyricsOnly(div, line, fontSize, song.isRTL);
       }
     });
@@ -393,6 +617,9 @@ document.getElementById('btnBorders').addEventListener('click', () => {
 document.getElementById('btnDark').addEventListener('click', () => {
   darkMode = !darkMode;
   render();
+});
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
 });
 
 // ─── Init ────────────────────────────────────────────────────────────────
