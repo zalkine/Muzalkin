@@ -243,13 +243,12 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // RTL chord alignment — Tab4U encodes chord positions using \xa0 spacing
-  // designed for right-aligned LTR display: the last char sits at the right
-  // edge, so each chord's position-from-right matches its syllable's RTL
-  // visual position. writingDirection MUST be 'ltr' (not 'rtl') so the first
-  // char is NOT placed at the right edge.
+  // RTL chord alignment — Tab4U chord cells are in HTML order where cell 1
+  // is the rightmost visual cell (RTL table). Joining them gives a string
+  // where the first chord should appear at the RIGHT edge. writingDirection
+  // 'rtl' achieves this: the first character anchors to the right, and \xa0
+  // spaces push subsequent chords to the left, matching the RTL lyric below.
   chordsTextRTL: {
-    writingDirection: 'ltr',
-    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });

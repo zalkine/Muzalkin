@@ -142,7 +142,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   color: 'var(--chord-color)',
                   whiteSpace: 'pre',
                   lineHeight: `${Math.round(monoSize * 1.4)}px`,
-                  direction: 'ltr',
+                  direction: isRTL ? 'rtl' : 'ltr',
                 }}>
                   {line.content}
                 </div>
