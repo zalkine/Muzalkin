@@ -109,18 +109,19 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
           case 'pair':
             return (
               <View key={index} style={styles.pairBlock}>
-                {/* Chord row — same monospace font + size as lyrics row below */}
+                {/* Chord row — right-aligned LTR so Tab4U's \xa0 positions align
+                    with the RTL lyric below (last char at right edge) */}
                 <Text
                   style={[
                     styles.chordsText,
                     { fontSize: size, lineHeight: size * 1.4 },
-                    isRTL && styles.textRTL,
+                    isRTL && styles.chordsTextRTL,
                   ]}
                   selectable
                 >
                   {block.chords}
                 </Text>
-                {/* Lyric row — same monospace font + size as chord row above */}
+                {/* Lyric row — RTL direction so Hebrew renders right-to-left */}
                 <Text
                   style={[
                     styles.lyricsText,
@@ -141,7 +142,7 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
                   style={[
                     styles.chordsText,
                     { fontSize: size, lineHeight: size * 1.4 },
-                    isRTL && styles.textRTL,
+                    isRTL && styles.chordsTextRTL,
                   ]}
                   selectable
                 >
@@ -236,9 +237,19 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
 
-  // RTL text alignment
+  // RTL text alignment (for lyrics — Hebrew characters render right-to-left)
   textRTL: {
     writingDirection: 'rtl',
+    textAlign: 'right',
+  },
+
+  // RTL chord alignment — Tab4U encodes chord positions using \xa0 spacing
+  // designed for right-aligned LTR display: the last char sits at the right
+  // edge, so each chord's position-from-right matches its syllable's RTL
+  // visual position. writingDirection MUST be 'ltr' (not 'rtl') so the first
+  // char is NOT placed at the right edge.
+  chordsTextRTL: {
+    writingDirection: 'ltr',
     textAlign: 'right',
   },
 });
