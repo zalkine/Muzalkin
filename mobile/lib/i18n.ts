@@ -14,7 +14,7 @@ import he from '../locales/he.json';
  * The user can override this later in Settings (stored in users.language).
  */
 i18next.use(initReactI18next).init({
-  lng: I18nManager.isRTL ? 'he' : 'en',
+  lng: 'he',
   fallbackLng: 'en',
   resources: {
     en: { translation: en },

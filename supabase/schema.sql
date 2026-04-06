@@ -18,7 +18,8 @@ CREATE TABLE users (
   email        text        NOT NULL UNIQUE,
   display_name text        NOT NULL,
   avatar_url   text,
-  language     text        NOT NULL DEFAULT 'he' CHECK (language IN ('he', 'en')),
+  language     text        NOT NULL DEFAULT 'he'    CHECK (language   IN ('he', 'en')),
+  instrument   text        NOT NULL DEFAULT 'guitar' CHECK (instrument IN ('guitar', 'piano')),
   created_at   timestamp   DEFAULT now()
 );
 
@@ -55,7 +56,7 @@ CREATE TABLE playlist_songs (
 CREATE TABLE cached_chords (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   song_title  text        NOT NULL,
-  artist      text        NOT NULL,
+  artist      text        NOT NULL DEFAULT '',  -- empty string when artist is unknown
   language    text        DEFAULT 'he' CHECK (language IN ('he', 'en')),
   source      text        NOT NULL CHECK (source IN ('tab4u', 'nagnu', 'negina', 'ultimate_guitar', 'chordify')),
   chords_data jsonb       NOT NULL,
