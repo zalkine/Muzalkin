@@ -236,7 +236,7 @@ export default function SongDetailPage() {
   const [saving,   setSaving]   = useState(false);
   const [savedId,  setSavedId]  = useState<string | null>(null);
   const [semitones, setSemitones] = useState(0);
-  const [fontSize,  setFontSize]  = useState(1.4);
+  const [fontSize,  setFontSize]  = useState(1.2);
   const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
