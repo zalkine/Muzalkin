@@ -15,12 +15,23 @@ export default function WelcomePage() {
       justifyContent: 'flex-end',
       paddingBottom: 80,
     }}>
-      {/* Background — photo if available, gradient fallback otherwise */}
+      {/* Background — photo if available, rich gradient fallback otherwise */}
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%)',
+        background: 'linear-gradient(160deg, #0d0d1a 0%, #0f1f3d 30%, #1a1060 55%, #2d0a3a 80%, #0d0d1a 100%)',
       }} />
+      {/* Decorative music-note blobs for depth */}
+      <div style={{
+        position: 'absolute', inset: 0, overflow: 'hidden', opacity: 0.18,
+        fontSize: 120, userSelect: 'none', pointerEvents: 'none',
+      }}>
+        <span style={{ position: 'absolute', top: '8%',  left: '5%',  transform: 'rotate(-20deg)' }}>🎸</span>
+        <span style={{ position: 'absolute', top: '12%', right: '8%', transform: 'rotate(15deg)',  fontSize: 90 }}>🎹</span>
+        <span style={{ position: 'absolute', top: '55%', left: '2%',  transform: 'rotate(10deg)',  fontSize: 80 }}>🎵</span>
+        <span style={{ position: 'absolute', top: '40%', right: '3%', transform: 'rotate(-12deg)', fontSize: 100 }}>🎶</span>
+        <span style={{ position: 'absolute', bottom: '18%', left: '30%', fontSize: 70 }}>🎼</span>
+      </div>
       <img
         src="/welcome.jpg"
         alt="MuZalkin band"
