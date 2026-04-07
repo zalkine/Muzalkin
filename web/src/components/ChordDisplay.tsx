@@ -39,15 +39,18 @@ export type ChordLine = ChordLineSimple | ChordLineInline;
 function splitMergedChords(s: string): string {
   let prev = '';
   let curr = s;
-  // Loop until stable (handles triple merges like "CAmG" → "C Am G" in two passes)
+  // Loop until stable (handles triple merges like "CAmG" in two passes)
   while (curr !== prev) {
     prev = curr;
-    // Case 1: chord root (A-G) immediately following a letter or digit
-    //         e.g. "CAm" → C followed by A
-    curr = curr.replace(/(?<=[A-Za-z\d])(?=[A-G])/g, ' ');
-    // Case 2: chord root immediately following a sharp or flat modifier
-    //         e.g. "C#Am" → # followed by A,  "BbG" → b followed by G
-    curr = curr.replace(/(?<=[#b])(?=[A-G])/g, ' ');
+    // Case 1: any letter or digit immediately before an uppercase chord root
+    //   "CAm" → C before A → "C Am"
+    //   "AmC" → m before C → "Am C"
+    //   "BbG" → b before G → "Bb G"
+    // [A-G] is uppercase-only, so "Cmaj7", "C#m", "Bb" are not split.
+    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1 $2');
+    // Case 2: sharp/flat modifier immediately before a chord root
+    //   "C#Am" → # before A → "C# Am"
+    curr = curr.replace(/([#])([A-G])/g, '$1 $2');
   }
   return curr;
 }

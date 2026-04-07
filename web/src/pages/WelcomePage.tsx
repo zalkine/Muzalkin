@@ -15,10 +15,16 @@ export default function WelcomePage() {
       justifyContent: 'flex-end',
       paddingBottom: 80,
     }}>
-      {/* Background photo */}
+      {/* Background — photo if available, gradient fallback otherwise */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%)',
+      }} />
       <img
         src="/welcome.jpg"
         alt="MuZalkin band"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         style={{
           position: 'absolute',
           inset: 0,
