@@ -1,30 +1,36 @@
-/* ── Theme variables ─────────────────────────────────────────────────── */
+/* ── Theme variables (dark by default — music feel) ──────────────────── */
 :root {
-  --bg:       #ffffff;
-  --surface:  #f5f5f5;
-  --input-bg: #f9f9f9;
-  --card-bg:  #ffffff;
-  --text:     #111111;
-  --text2:    #666666;
-  --text3:    #888888;
-  --border:   #e0e0e0;
-  --border2:  #f0f0f0;
-  --accent:       #4285F4;
-  --chord-color:  #e8640c;  /* Tab4U-style orange for chord names */
+  --bg:           #0c0c1a;
+  --surface:      #12122a;
+  --input-bg:     #181830;
+  --card-bg:      #151528;
+  --text:         #eeeef8;
+  --text2:        #9090bb;
+  --text3:        #5858a0;
+  --border:       #252545;
+  --border2:      #1c1c38;
+  --accent:       #5b8dff;      /* electric blue */
+  --accent2:      #a040ff;      /* neon purple */
+  --accent-glow:  rgba(91,141,255,0.35);
+  --chord-color:  #ff9642;      /* warm orange — same as Tab4U */
+  --hero-grad:    linear-gradient(160deg, #0c0c1a 0%, #0e1535 35%, #180d3a 65%, #0c0c1a 100%);
 }
 
-body.dark {
-  --bg:       #121212;
-  --surface:  #1e1e1e;
-  --input-bg: #2a2a2a;
-  --card-bg:  #1e1e1e;
-  --text:     #f0f0f0;
-  --text2:    #aaaaaa;
-  --text3:    #888888;
-  --border:   #333333;
-  --border2:  #2a2a2a;
-  --accent:       #6ba3ff;
-  --chord-color:  #ff9642;  /* Tab4U-style orange, brightened for dark backgrounds */
+body.light {
+  --bg:           #ffffff;
+  --surface:      #f5f5f5;
+  --input-bg:     #f9f9f9;
+  --card-bg:      #ffffff;
+  --text:         #111111;
+  --text2:        #666666;
+  --text3:        #888888;
+  --border:       #e0e0e0;
+  --border2:      #f0f0f0;
+  --accent:       #4285F4;
+  --accent2:      #7c3aed;
+  --accent-glow:  rgba(66,133,244,0.25);
+  --chord-color:  #e8640c;
+  --hero-grad:    linear-gradient(160deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, #1a1a2e 100%);
 }
 
 /* ── Global reset ────────────────────────────────────────────────────── */
@@ -39,30 +45,19 @@ body {
   transition: background 0.2s, color 0.2s;
 }
 
-button {
-  cursor: pointer;
-  font-family: inherit;
-}
-
-input {
-  font-family: inherit;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
+button { cursor: pointer; font-family: inherit; }
+input  { font-family: inherit; }
+a      { color: inherit; text-decoration: none; }
 
 /* ── Mobile viewport fix ─────────────────────────────────────────────── */
-/* 100vh on mobile browsers includes the browser chrome (address bar),   */
-/* so NavBar falls below the visible fold. Use dynamic viewport height.  */
 .app-root {
   display: flex;
   flex-direction: column;
-  height: 100vh;    /* fallback for older browsers */
-  height: 100dvh;   /* dynamic viewport — excludes browser chrome on mobile */
+  height: 100vh;
+  height: 100dvh;
 }
 
+/* ── Animations ──────────────────────────────────────────────────────── */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -70,4 +65,85 @@ a {
 @keyframes jam-pulse {
   0%, 100% { transform: scale(1); }
   50%       { transform: scale(1.25); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+/* ── Search page hero gradient ───────────────────────────────────────── */
+.search-hero {
+  background: var(--hero-grad);
+  padding: 28px 20px 24px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.search-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 30% 50%, rgba(91,141,255,0.12) 0%, transparent 60%),
+              radial-gradient(ellipse at 75% 30%, rgba(160,64,255,0.1) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+/* ── Song result cards ───────────────────────────────────────────────── */
+.song-card {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border2);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+  animation: fadeInUp 0.2s ease both;
+}
+
+.song-card:hover,
+.song-card:focus-visible {
+  background: var(--surface);
+}
+
+/* ── Bottom nav tab ──────────────────────────────────────────────────── */
+.nav-tab-active {
+  color: var(--accent) !important;
+  text-shadow: 0 0 12px var(--accent-glow);
+}
+
+.nav-tab-active .nav-icon {
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+
+/* ── Chip (recent search) ────────────────────────────────────────────── */
+.search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.search-chip:hover {
+  border-color: var(--accent);
+  color: var(--text);
 }

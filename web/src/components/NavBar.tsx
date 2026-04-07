@@ -12,17 +12,13 @@ const NAV_ITEMS = [
 
 export default function NavBar() {
   const { t, i18n } = useTranslation();
-  const isRTL  = i18n.language === 'he';
+  const isRTL   = i18n.language === 'he';
   const session = useSession();
   const navigate = useNavigate();
   const jam      = useJam();
 
   const handleAuth = async () => {
-    if (session) {
-      await signOut();
-    } else {
-      navigate('/login');
-    }
+    if (session) { await signOut(); } else { navigate('/login'); }
   };
 
   return (
@@ -30,7 +26,8 @@ export default function NavBar() {
       display: 'flex',
       flexDirection: isRTL ? 'row-reverse' : 'row',
       borderTop: '1px solid var(--border)',
-      backgroundColor: 'var(--bg)',
+      backgroundColor: 'var(--surface)',
+      paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
       {NAV_ITEMS.map(({ to, labelKey, icon }) => (
         <NavLink
@@ -42,20 +39,40 @@ export default function NavBar() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: '10px 0',
+            padding: '10px 0 8px',
             gap: 3,
             color: isActive ? 'var(--accent)' : 'var(--text3)',
             fontSize: 11,
             fontWeight: isActive ? 700 : 400,
-            borderTop: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+            textDecoration: 'none',
+            position: 'relative',
+            transition: 'color 0.15s',
           })}
         >
-          <span style={{ fontSize: 20 }}>{icon}</span>
-          <span>{t(labelKey)}</span>
+          {({ isActive }) => (
+            <>
+              <span style={{
+                position: 'absolute',
+                top: 0, left: '15%', right: '15%',
+                height: 2, borderRadius: 2,
+                background: isActive ? 'var(--accent)' : 'transparent',
+                boxShadow: isActive ? '0 0 8px var(--accent-glow)' : 'none',
+                transition: 'background 0.15s',
+              }} />
+              <span style={{
+                fontSize: 22,
+                filter: isActive ? 'drop-shadow(0 0 5px var(--accent-glow))' : 'none',
+                transition: 'filter 0.15s',
+              }}>
+                {icon}
+              </span>
+              <span>{t(labelKey)}</span>
+            </>
+          )}
         </NavLink>
       ))}
 
-      {/* Join Jam — pulsing icon when a session is active */}
+      {/* Join Jam */}
       <NavLink
         to="/jam"
         style={({ isActive }) => ({
@@ -64,22 +81,38 @@ export default function NavBar() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '10px 0',
+          padding: '10px 0 8px',
           gap: 3,
           color: jam.sessionCode ? 'var(--accent)' : (isActive ? 'var(--accent)' : 'var(--text3)'),
           fontSize: 11,
           fontWeight: jam.sessionCode || isActive ? 700 : 400,
-          borderTop: (jam.sessionCode || isActive) ? '2px solid var(--accent)' : '2px solid transparent',
           textDecoration: 'none',
+          position: 'relative',
+          transition: 'color 0.15s',
         })}
       >
-        <span style={{ fontSize: 20, animation: jam.sessionCode ? 'jam-pulse 1.4s ease-in-out infinite' : 'none' }}>
-          🎸
-        </span>
-        <span>{t('jam_nav')}</span>
+        {({ isActive }) => (
+          <>
+            <span style={{
+              position: 'absolute',
+              top: 0, left: '15%', right: '15%',
+              height: 2, borderRadius: 2,
+              background: (jam.sessionCode || isActive) ? 'var(--accent)' : 'transparent',
+              boxShadow: (jam.sessionCode || isActive) ? '0 0 8px var(--accent-glow)' : 'none',
+            }} />
+            <span style={{
+              fontSize: 22,
+              animation: jam.sessionCode ? 'jam-pulse 1.4s ease-in-out infinite' : 'none',
+              filter: (jam.sessionCode || isActive) ? 'drop-shadow(0 0 5px var(--accent-glow))' : 'none',
+            }}>
+              🎸
+            </span>
+            <span>{t('jam_nav')}</span>
+          </>
+        )}
       </NavLink>
 
-      {/* Sign in / Sign out */}
+      {/* Sign in / out */}
       <button
         onClick={handleAuth}
         style={{
@@ -88,17 +121,17 @@ export default function NavBar() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '10px 0',
+          padding: '10px 0 8px',
           gap: 3,
           background: 'none',
           border: 'none',
-          borderTop: '2px solid transparent',
           cursor: 'pointer',
           color: 'var(--text3)',
           fontSize: 11,
+          position: 'relative',
         }}
       >
-        <span style={{ fontSize: 20 }}>{session ? '👤' : '🔑'}</span>
+        <span style={{ fontSize: 22 }}>{session ? '👤' : '🔑'}</span>
         <span>{session ? t('sign_out') : t('sign_in_google')}</span>
       </button>
     </nav>

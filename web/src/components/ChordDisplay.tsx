@@ -122,7 +122,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                           lineHeight: `${chordHeight}px`,
                         }}
                       >
-                        {seg.chord?.trim() || '\u00A0'}
+                        {seg.chord?.trim() ? splitMergedChords(seg.chord.trim()) : '\u00A0'}
                       </span>
                     )}
                     <span
