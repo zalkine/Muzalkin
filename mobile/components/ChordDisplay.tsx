@@ -24,6 +24,22 @@ type Props = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Insert a space wherever two chord names are concatenated with no separator.
+ * e.g. "CAm" → "C Am",  "C#Am" → "C# Am",  "BbG" → "Bb G"
+ * Already-spaced chords (separated by \xa0 or space) are left untouched.
+ */
+function splitMergedChords(s: string): string {
+  let prev = '';
+  let curr = s;
+  while (curr !== prev) {
+    prev = curr;
+    curr = curr.replace(/(?<=[A-Za-z\d])(?=[A-G])/g, ' ');
+    curr = curr.replace(/(?<=[#b])(?=[A-G])/g, ' ');
+  }
+  return curr;
+}
+
+/**
  * Group the flat ChordLine array into renderable blocks:
  *   - A "pair" block: a chords line immediately followed by a lyrics line
  *   - A "lyrics-only" block: a lyrics line with no preceding chords line
@@ -119,7 +135,7 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
                   ]}
                   selectable
                 >
-                  {block.chords}
+                  {splitMergedChords(block.chords)}
                 </Text>
                 {/* Lyric row — RTL direction so Hebrew renders right-to-left */}
                 <Text
@@ -138,7 +154,8 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
           case 'chords-only': {
             // No lyric to align against — collapse \xa0 runs to single space
             // so intro/chord-only sections don't show excessive gaps.
-            const normalizedChords = block.chords.replace(/\u00a0+/g, ' ').trim();
+            // Also fix any merged chord names (e.g. "CAm" → "C Am").
+            const normalizedChords = splitMergedChords(block.chords).replace(/\u00a0+/g, ' ').trim();
             return (
               <View key={index} style={styles.pairBlock}>
                 <Text

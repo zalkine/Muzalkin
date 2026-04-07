@@ -23,8 +23,35 @@ export type ChordLineInline = {
 export type ChordLine = ChordLineSimple | ChordLineInline;
 
 // ---------------------------------------------------------------------------
-// Component
+// Helper: fix merged chord names
 // ---------------------------------------------------------------------------
+
+/**
+ * Insert a space wherever two chord names are concatenated with no separator.
+ * e.g. "CAm" → "C Am",  "AmC" → "Am C",  "C#Am" → "C# Am",  "BbG" → "Bb G"
+ *
+ * Safe cases (not split):
+ *   "Cmaj7"  — modifier letters are lowercase, not a new chord root
+ *   "C#m"    — # is a modifier, m is lowercase
+ *   "Bb"     — single flat-chord, no following root
+ *   "Am\xa0C"— already separated by non-breaking space → unchanged
+ */
+function splitMergedChords(s: string): string {
+  let prev = '';
+  let curr = s;
+  // Loop until stable (handles triple merges like "CAmG" → "C Am G" in two passes)
+  while (curr !== prev) {
+    prev = curr;
+    // Case 1: chord root (A-G) immediately following a letter or digit
+    //         e.g. "CAm" → C followed by A
+    curr = curr.replace(/(?<=[A-Za-z\d])(?=[A-G])/g, ' ');
+    // Case 2: chord root immediately following a sharp or flat modifier
+    //         e.g. "C#Am" → # followed by A,  "BbG" → b followed by G
+    curr = curr.replace(/(?<=[#b])(?=[A-G])/g, ' ');
+  }
+  return curr;
+}
+
 
 type Props = {
   data: ChordLine[];
@@ -128,8 +155,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             // no syllables to align against, so collapse runs of \u00a0 to a
             // single space to avoid visually excessive gaps.
             const chordContent = hasLyricBelow
-              ? line.content
-              : line.content.replace(/\u00a0+/g, ' ').trim();
+              ? splitMergedChords(line.content)
+              : splitMergedChords(line.content).replace(/\u00a0+/g, ' ').trim();
             const MONO = '"Courier New", Courier, monospace';
             const monoSize = Math.round(15 * fontSize);
             return (
