@@ -165,9 +165,15 @@ def fetch_tab4u(url: str) -> dict:
                 text = cell.get_text(separator="").strip("\r\n\t ")
                 if text.strip():           # only append non-blank cells
                     parts.append(text)
-            # Join with no separator — trailing \xa0 inside each cell already
-            # encodes the gap to the next chord.
-            content = "".join(parts)
+            # Join cells, ensuring at least one \xa0 between adjacent chords
+            # when the preceding cell has no trailing non-breaking space.
+            # Without this, cells like "C" + "Am" → "CAm" instead of "C\xa0Am".
+            pieces = []
+            for idx, text in enumerate(parts):
+                if idx > 0 and not parts[idx - 1].endswith('\xa0'):
+                    pieces.append('\xa0')
+                pieces.append(text)
+            content = "".join(pieces)
             if content.strip():
                 chords_data.append({"type": "chords", "content": content})
             continue

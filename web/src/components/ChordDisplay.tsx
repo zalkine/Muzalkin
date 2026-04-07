@@ -123,6 +123,13 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             // position each chord exactly above its syllable.
             // Both chord and lyric rows use the same monospace font and the
             // same font size — the only way &nbsp; widths match across rows.
+            //
+            // Exception: chords-only lines (no lyric below, e.g. intro) have
+            // no syllables to align against, so collapse runs of \u00a0 to a
+            // single space to avoid visually excessive gaps.
+            const chordContent = hasLyricBelow
+              ? line.content
+              : line.content.replace(/\u00a0+/g, ' ').trim();
             const MONO = '"Courier New", Courier, monospace';
             const monoSize = Math.round(15 * fontSize);
             return (
@@ -143,7 +150,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   lineHeight: `${Math.round(monoSize * 1.4)}px`,
                   direction: isRTL ? 'rtl' : 'ltr',
                 }}>
-                  {line.content}
+                  {chordContent}
                 </div>
                 {/* Lyric row — same monospace font + size so character widths match */}
                 {hasLyricBelow && (

@@ -135,7 +135,10 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
               </View>
             );
 
-          case 'chords-only':
+          case 'chords-only': {
+            // No lyric to align against — collapse \xa0 runs to single space
+            // so intro/chord-only sections don't show excessive gaps.
+            const normalizedChords = block.chords.replace(/\u00a0+/g, ' ').trim();
             return (
               <View key={index} style={styles.pairBlock}>
                 <Text
@@ -146,10 +149,11 @@ export default function ChordDisplay({ data, scrollRef, onScroll, fontSize = 1.0
                   ]}
                   selectable
                 >
-                  {block.chords}
+                  {normalizedChords}
                 </Text>
               </View>
             );
+          }
 
           case 'lyrics-only':
             return (
