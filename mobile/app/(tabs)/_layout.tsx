@@ -19,7 +19,18 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: '#4285F4',
         tabBarInactiveTintColor: '#888',
-        tabBarStyle: { direction: isRTL ? 'rtl' : 'ltr' },
+        tabBarStyle: {
+          direction: isRTL ? 'rtl' : 'ltr',
+          backgroundColor: '#ffffff',
+          borderTopWidth: 1,
+          borderTopColor: '#e0e0e0',
+          // Elevate above content on Android so it's never hidden behind a screen
+          elevation: 12,
+          // Explicit height keeps the bar consistent across screen sizes
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 4,
+        },
       }}
     >
       <Tabs.Screen

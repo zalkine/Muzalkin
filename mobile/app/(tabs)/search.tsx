@@ -72,6 +72,13 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={[styles.safe, isRTL && styles.safeRTL]}>
 
+      {/* ── Tagline ── */}
+      <View style={styles.taglineRow}>
+        <Text style={[styles.tagline, isRTL && styles.textRTL]}>
+          {t('tagline')}
+        </Text>
+      </View>
+
       {/* ── Search bar ── */}
       <View style={styles.searchRow}>
         <TextInput
@@ -186,6 +193,20 @@ const styles = StyleSheet.create({
   },
   safeRTL: {
     direction: 'rtl',
+  },
+
+  // Tagline header
+  taglineRow: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
+  },
+  tagline: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#4285F4',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
 
   // Search bar
