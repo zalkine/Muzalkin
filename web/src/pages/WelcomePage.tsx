@@ -33,7 +33,7 @@ export default function WelcomePage() {
         <span style={{ position: 'absolute', bottom: '18%', left: '30%', fontSize: 70 }}>🎼</span>
       </div>
       <img
-        src="/welcome.jpg"
+        src="/Band.jpg"
         alt="MuZalkin band"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         style={{
