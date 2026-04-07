@@ -22,7 +22,7 @@ function AppShell() {
   const showNav  = location.pathname !== '/';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <div className="app-root">
       {/* Jam session status bar — visible whenever a session is active */}
       <JamBanner />
 

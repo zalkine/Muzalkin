@@ -98,6 +98,18 @@ export default function SearchPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
 
+      {/* Tagline */}
+      <div style={{ padding: '18px 20px 6px', textAlign: 'center' }}>
+        <span style={{
+          fontSize: 22,
+          fontWeight: 700,
+          color: 'var(--accent)',
+          letterSpacing: 0.3,
+        }}>
+          {t('tagline')}
+        </span>
+      </div>
+
       {/* Search bar */}
       <div style={{
         display: 'flex',

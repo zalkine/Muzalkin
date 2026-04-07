@@ -81,5 +81,6 @@
   "jam_join_btn": "Join",
   "jam_not_found": "Jam code not found",
   "jam_share_title": "Share Jam",
-  "jam_share_text": "Join my MuZalkin jam! Code: {{code}}"
+  "jam_share_text": "Join my MuZalkin jam! Code: {{code}}",
+  "tagline": "Enjoy playing with MuZalkin"
 }

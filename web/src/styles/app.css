@@ -53,6 +53,16 @@ a {
   text-decoration: none;
 }
 
+/* ── Mobile viewport fix ─────────────────────────────────────────────── */
+/* 100vh on mobile browsers includes the browser chrome (address bar),   */
+/* so NavBar falls below the visible fold. Use dynamic viewport height.  */
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;    /* fallback for older browsers */
+  height: 100dvh;   /* dynamic viewport — excludes browser chrome on mobile */
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
