@@ -33,8 +33,8 @@ function splitMergedChords(s: string): string {
   let curr = s;
   while (curr !== prev) {
     prev = curr;
-    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1 $2');
-    curr = curr.replace(/([#])([A-G])/g, '$1 $2');
+    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
+    curr = curr.replace(/([#])([A-G])/g, '$1\u00a0$2');
   }
   return curr;
 }

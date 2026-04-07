@@ -47,10 +47,10 @@ function splitMergedChords(s: string): string {
     //   "AmC" → m before C → "Am C"
     //   "BbG" → b before G → "Bb G"
     // [A-G] is uppercase-only, so "Cmaj7", "C#m", "Bb" are not split.
-    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1 $2');
+    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
     // Case 2: sharp/flat modifier immediately before a chord root
     //   "C#Am" → # before A → "C# Am"
-    curr = curr.replace(/([#])([A-G])/g, '$1 $2');
+    curr = curr.replace(/([#])([A-G])/g, '$1\u00a0$2');
   }
   return curr;
 }

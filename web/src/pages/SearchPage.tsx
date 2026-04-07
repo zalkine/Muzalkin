@@ -106,7 +106,7 @@ export default function SearchPage() {
           color: 'var(--accent)',
           letterSpacing: 0.3,
         }}>
-          {t('tagline')}
+          Enjoy Playing with MuZalkin
         </span>
       </div>
 
