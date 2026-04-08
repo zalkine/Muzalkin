@@ -35,15 +35,8 @@ export default function WelcomePage() {
       <img
         src="/Band.jpg"
         alt="MuZalkin band"
+        className="welcome-band-img"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          objectPosition: 'center top',
-        }}
       />
 
       {/* Dark gradient overlay — stronger at bottom for button readability */}

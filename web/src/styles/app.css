@@ -77,6 +77,24 @@ a      { color: inherit; text-decoration: none; }
   100% { background-position:  200% center; }
 }
 
+/* ── Welcome page band photo ─────────────────────────────────────────── */
+/* Mobile (portrait): keep top-anchored so the full band stays visible   */
+.welcome-band-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
+/* Desktop / landscape: crop evenly from top and bottom (center vertically) */
+@media (min-aspect-ratio: 1/1) {
+  .welcome-band-img {
+    object-position: center center;
+  }
+}
+
 /* ── Search page hero gradient ───────────────────────────────────────── */
 .search-hero {
   background: var(--hero-grad);
