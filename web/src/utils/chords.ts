@@ -5,6 +5,27 @@ const CHORD_TOKEN_RE =
   /[A-G][#b]?(m(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+)*(?:\/[A-G][#b]?)?/g;
 
 /**
+ * Insert \xa0 between merged adjacent chord names before tokenisation.
+ * e.g. "CAm" → "C\xa0Am",  "AmFmaj7" → "Am\xa0Fmaj7",  "GbFm" → "Gb\xa0Fm"
+ *
+ * This must run on the raw chord LINE (not individual chord tokens) so that
+ * the RTL position math (lyricPos = L − 1 − start) uses a string where each
+ * chord is separated by at least one character.  Without this, two merged
+ * chords at positions 0 and 1 produce a 1-char-wide lyric slice, which
+ * breaks every Hebrew word into individual spaced-out letters.
+ */
+function separateMergedChords(s: string): string {
+  let prev = '';
+  let curr = s;
+  while (curr !== prev) {
+    prev = curr;
+    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
+    curr = curr.replace(/([#b])([A-G])/g, '$1\u00a0$2');
+  }
+  return curr;
+}
+
+/**
  * Parse a chord line + lyric line into a segment-based ChordLineInline.
  *
  * LTR (English, Ultimate Guitar):
@@ -28,10 +49,16 @@ export function parseChordLyricPair(
   lyricLine: string,
   isRTL = false,
 ): ChordLineInline {
+  // Pre-process: ensure merged chord names (e.g. "CAm", "AmFmaj7") are
+  // separated by \xa0 before tokenisation.  Without this, adjacent chords at
+  // string positions 0 and 1 produce a 1-char-wide lyric slice, which splits
+  // Hebrew words into individual spaced-out letters.
+  const cl = separateMergedChords(chordLine);
+
   const matches: Array<{ chord: string; start: number }> = [];
   CHORD_TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = CHORD_TOKEN_RE.exec(chordLine)) !== null) {
+  while ((m = CHORD_TOKEN_RE.exec(cl)) !== null) {
     matches.push({ chord: m[0], start: m.index });
   }
 
@@ -40,7 +67,7 @@ export function parseChordLyricPair(
   }
 
   if (isRTL) {
-    const L = chordLine.length;
+    const L = cl.length;
     // Map each chord's string position P → lyric column Q = L−1−P,
     // then sort ascending by Q (rightmost lyric position first).
     const mapped = matches
