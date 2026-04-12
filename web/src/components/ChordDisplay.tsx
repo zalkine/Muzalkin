@@ -50,7 +50,8 @@ function splitMergedChords(s: string): string {
     curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
     // Case 2: sharp/flat modifier immediately before a chord root
     //   "C#Am" → # before A → "C# Am"
-    curr = curr.replace(/([#])([A-G])/g, '$1\u00a0$2');
+    //   "GbFm" → b before F → "Gb Fm"
+    curr = curr.replace(/([#b])([A-G])/g, '$1\u00a0$2');
   }
   return curr;
 }
