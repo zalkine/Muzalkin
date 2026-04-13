@@ -567,8 +567,6 @@ export default function SongDetailPage() {
     );
   }
 
-  // DEBUG: remove after diagnosis
-  console.log('[DEBUG] isRTL=', isRTL, 'first line type=', song.chords_data?.[0]?.type, 'total lines=', song.chords_data?.length);
   const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones), isRTL);
 
   return (
