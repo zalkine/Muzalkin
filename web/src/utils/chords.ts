@@ -120,8 +120,17 @@ export function parseChordLyricPair(
  * segment-based 'line' entries for correct RTL/LTR chord placement.
  * Sections and standalone lyric lines are passed through unchanged.
  * Data already in 'line' format is also passed through unchanged.
+ *
+ * RTL (Hebrew/Tab4U): the chord strings use \xa0 characters to position each
+ * chord above its syllable assuming a fixed-width monospace cell — exactly how
+ * Tab4U renders them.  Converting to 'line' segments slices the Hebrew lyric
+ * at position-derived boundaries that split Hebrew words, causing "יל ד" gaps.
+ * Keep RTL data in legacy monospace mode so both rows share the same monospace
+ * font and the \xa0 alignment works as Tab4U intended.
  */
 export function normalizeChordData(data: ChordLine[], isRTL = false): ChordLine[] {
+  if (isRTL) return data;
+
   const result: ChordLine[] = [];
   let i = 0;
 

@@ -50,7 +50,8 @@ function splitMergedChords(s: string): string {
     curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
     // Case 2: sharp/flat modifier immediately before a chord root
     //   "C#Am" → # before A → "C# Am"
-    curr = curr.replace(/([#])([A-G])/g, '$1\u00a0$2');
+    //   "GbFm" → b before F → "Gb Fm"
+    curr = curr.replace(/([#b])([A-G])/g, '$1\u00a0$2');
   }
   return curr;
 }
@@ -170,7 +171,11 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   marginBottom: Math.round(2 * fontSize),
                 }}
               >
-                {/* Chord row — raw string, whiteSpace:pre preserves &nbsp; */}
+                {/* Chord row — raw string, whiteSpace:pre preserves &nbsp;
+                    RTL: direction:ltr + textAlign:right matches Tab4U's CSS exactly
+                    (Tab4U renders chord rows as direction:ltr / text-align:right so
+                    the last character of the chord string sits at the right edge,
+                    which aligns each chord above its correct Hebrew syllable). */}
                 <div style={{
                   fontFamily: MONO,
                   fontSize: monoSize,
@@ -178,7 +183,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                   color: 'var(--chord-color)',
                   whiteSpace: 'pre',
                   lineHeight: `${Math.round(monoSize * 1.4)}px`,
-                  direction: isRTL ? 'rtl' : 'ltr',
+                  direction: 'ltr',
+                  textAlign: isRTL ? 'right' : 'left',
                 }}>
                   {chordContent}
                 </div>

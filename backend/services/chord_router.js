@@ -40,15 +40,22 @@ function getSupabaseAnon() {
 // ---------------------------------------------------------------------------
 
 async function searchCache(query, lang) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return [];
   const q = query.trim();
-  const { data, error } = await getSupabaseAnon()
-    .from('cached_chords')
-    // Include chords_data so we can filter out bad (chord-less) entries
-    .select('id, song_title, artist, language, source, fetched_at, chords_data')
-    .eq('language', lang)
-    .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
-    .order('fetched_at', { ascending: false })
-    .limit(40);
+  let data, error;
+  try {
+    ({ data, error } = await getSupabaseAnon()
+      .from('cached_chords')
+      // Include chords_data so we can filter out bad (chord-less) entries
+      .select('id, song_title, artist, language, source, fetched_at, chords_data')
+      .eq('language', lang)
+      .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
+      .order('fetched_at', { ascending: false })
+      .limit(40));
+  } catch (e) {
+    console.warn('Cache search skipped (Supabase unavailable):', e.message);
+    return [];
+  }
 
   if (error) {
     console.error('Cache search error:', error.message);
@@ -65,14 +72,19 @@ async function searchCache(query, lang) {
 }
 
 async function getCachedById(id) {
-  const { data, error } = await getSupabaseAnon()
-    .from('cached_chords')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) return null;
-  return data;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
+  try {
+    const { data, error } = await getSupabaseAnon()
+      .from('cached_chords')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data;
+  } catch (e) {
+    console.warn('getCachedById skipped:', e.message);
+    return null;
+  }
 }
 
 async function saveToCache({ title, artist, lang, source, chordsData, url }) {
