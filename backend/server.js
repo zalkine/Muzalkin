@@ -28,10 +28,20 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', version: '2.0.0' }));
 
 // Serve the built React web app
 const webDist = path.join(__dirname, 'public');
-app.use(express.static(webDist));
+// Cache JS/CSS assets aggressively (content-hashed filenames), but never cache index.html
+app.use(express.static(webDist, {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+    }
+  },
+}));
 
 // SPA fallback — send index.html for any non-API route
 app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   res.sendFile(path.join(webDist, 'index.html'));
 });
 
