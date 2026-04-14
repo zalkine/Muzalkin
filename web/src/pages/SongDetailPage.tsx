@@ -674,17 +674,15 @@ export default function SongDetailPage() {
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.max(-11, s - 1))}>
               {t('transpose_down')}
             </button>
-            <span style={{ fontSize: 13, fontWeight: 700, minWidth: 52, textAlign: 'center', color: 'var(--text)', whiteSpace: 'nowrap' }}>
+            <button
+              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap' }}
+              onClick={() => setSemitones(0)}
+            >
               {semitones > 0 ? '+' : ''}{semitones / 2} {t('semitones')}
-            </span>
+            </button>
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.min(11, s + 1))}>
               {t('transpose_up')}
             </button>
-            {semitones !== 0 && (
-              <button style={{ ...toolBtnStyle, borderColor: 'var(--border)', color: 'var(--text3)' }} onClick={() => setSemitones(0)}>
-                {t('transpose_reset')}
-              </button>
-            )}
           </div>
 
           {/* Scroll + share + playlist */}
