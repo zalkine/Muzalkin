@@ -674,8 +674,8 @@ export default function SongDetailPage() {
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.max(-11, s - 1))}>
               {t('transpose_down')}
             </button>
-            <span style={{ fontSize: 13, fontWeight: 700, minWidth: 28, textAlign: 'center', color: 'var(--text)' }}>
-              {semitones > 0 ? `+${semitones}` : `${semitones}`}
+            <span style={{ fontSize: 13, fontWeight: 700, minWidth: 52, textAlign: 'center', color: 'var(--text)', whiteSpace: 'nowrap' }}>
+              {semitones > 0 ? '+' : ''}{semitones / 2} {t('semitones')}
             </span>
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.min(11, s + 1))}>
               {t('transpose_up')}
