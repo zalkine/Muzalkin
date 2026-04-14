@@ -6,7 +6,7 @@ import { forwardRef } from 'react';
 
 /** Legacy format — separate chord/lyric lines */
 export type ChordLineSimple = {
-  type: 'chords' | 'lyrics' | 'section';
+  type: 'chords' | 'lyrics' | 'section' | 'tab';
   content: string;
 };
 
@@ -61,10 +61,11 @@ type Props = {
   data: ChordLine[];
   fontSize?: number;
   isRTL?: boolean;
+  showTabs?: boolean;
 };
 
 const ChordDisplay = forwardRef<HTMLDivElement, Props>(
-  ({ data, fontSize = 1, isRTL = false }, ref) => {
+  ({ data, fontSize = 1, isRTL = false, showTabs = false }, ref) => {
     return (
       <div
         ref={ref}
@@ -239,24 +240,48 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               // Skip if already rendered above by the preceding 'chords' block
               const prevLine = data[i - 1];
               if (prevLine?.type === 'chords') return null;
-              const monoSize = Math.round(15 * fontSize);
+              // RTL: monospace so \xa0 chord alignment is preserved.
+              // LTR: proportional font, matching the inline segment renderer.
+              const isMonoLyric = isRTL;
+              const lyricSize = isMonoLyric ? Math.round(15 * fontSize) : Math.round(16 * fontSize);
               return (
                 <div key={i} style={{ marginBottom: Math.round(2 * fontSize) }}>
                   <span
                     style={{
-                      fontFamily: '"Courier New", Courier, monospace',
-                      fontSize: monoSize,
+                      fontFamily: isMonoLyric
+                        ? '"Courier New", Courier, monospace'
+                        : "'Segoe UI', system-ui, -apple-system, sans-serif",
+                      fontSize: lyricSize,
                       color: 'var(--text)',
-                      lineHeight: `${Math.round(monoSize * 1.55)}px`,
-                      whiteSpace: 'pre',
+                      lineHeight: `${Math.round(lyricSize * 1.55)}px`,
+                      whiteSpace: isMonoLyric ? 'pre' : 'pre-wrap',
                       direction: isRTL ? 'rtl' : 'ltr',
+                    }}
+                  >
+                    {isMonoLyric ? line.content : line.content.trim()}
+                  </span>
+                </div>
+              );
+            }
+
+            case 'tab':
+              if (!showTabs) return null;
+              return (
+                <div key={i} style={{ marginBottom: Math.round(1 * fontSize) }}>
+                  <span
+                    style={{
+                      fontFamily: '"Courier New", Courier, monospace',
+                      fontSize: Math.round(13 * fontSize),
+                      color: 'var(--text3)',
+                      lineHeight: `${Math.round(13 * fontSize * 1.5)}px`,
+                      whiteSpace: 'pre',
+                      direction: 'ltr',
                     }}
                   >
                     {line.content}
                   </span>
                 </div>
               );
-            }
 
             default:
               return null;

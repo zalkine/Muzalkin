@@ -335,19 +335,51 @@ def _parse_ug_content(content: str) -> list:
 # Cifraclub chord page parser
 # ---------------------------------------------------------------------------
 
-# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, etc.
+# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, C7M, GM, etc.
 _CHORD_WORD_RE = re.compile(
     r'^[A-G][#b]?'
-    r'(?:m(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+)*'
+    r'(?:m(?:aj\d*)?|M(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+M?)*'
     r'(?:\([^)]*\))?'        # optional (4), (9), etc.
     r'(?:/[A-G][#b]?)?$'
 )
+
+# Guitar tab line: starts with a string name (E B G D A e) followed by |
+_TAB_LINE_RE = re.compile(r'^[EBGDAe]\s*\|')
 
 
 def _is_chord_line(line: str) -> bool:
     """Return True if every space-separated token on the line is a chord name."""
     words = line.split()
     return bool(words) and all(_CHORD_WORD_RE.match(w) for w in words)
+
+
+# Map common Spanish/Portuguese section names to English
+_SECTION_MAP = [
+    (re.compile(r'^dedilhado\b',          re.I), 'Fingerpicking'),
+    (re.compile(r'^pré-refrão\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pre-refrão\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pré-chorus\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pre-chorus\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^refrão\b',             re.I), 'Chorus'),
+    (re.compile(r'^estribillo\b',         re.I), 'Chorus'),
+    (re.compile(r'^coro\b',               re.I), 'Chorus'),
+    (re.compile(r'^verso\b',              re.I), 'Verse'),
+    (re.compile(r'^ponte\b',              re.I), 'Bridge'),
+    (re.compile(r'^puente\b',             re.I), 'Bridge'),
+    (re.compile(r'^interlúdio\b',         re.I), 'Interlude'),
+    (re.compile(r'^interludio\b',         re.I), 'Interlude'),
+    (re.compile(r'^first\s+part\b',       re.I), 'Verse 1'),
+    (re.compile(r'^second\s+part\b',      re.I), 'Verse 2'),
+    (re.compile(r'^third\s+part\b',       re.I), 'Verse 3'),
+    (re.compile(r'^fourth\s+part\b',      re.I), 'Verse 4'),
+]
+
+
+def _translate_section(name: str) -> str:
+    for pattern, english in _SECTION_MAP:
+        if pattern.match(name):
+            return english
+    return name.capitalize()
 
 
 def _parse_cifraclub_content(content: str) -> list:
@@ -357,6 +389,7 @@ def _parse_cifraclub_content(content: str) -> list:
     Em7           G          ← chord line (chord names + spaces for alignment)
         Today is gonna       ← lyric line (leading spaces preserved for position)
     [Chorus]                 ← section header
+    E|-0--3--...             ← guitar tab line  (type: 'tab')
     """
     result = []
 
@@ -366,8 +399,8 @@ def _parse_cifraclub_content(content: str) -> list:
         # Section header: [Verse 1], [Chorus], [Bridge], etc.
         sec = re.match(r'^\[([^\]]+)\]', line)
         if sec:
-            section_text = sec.group(1).strip()
-            result.append({"type": "section", "content": section_text.capitalize()})
+            section_text = _translate_section(sec.group(1).strip())
+            result.append({"type": "section", "content": section_text})
             rest = line[sec.end():].strip()
             if rest:
                 if _is_chord_line(rest):
@@ -379,11 +412,36 @@ def _parse_cifraclub_content(content: str) -> list:
         if not line.strip():
             continue
 
+        # Guitar tab line: E|-0--3--  B|-1--3-- etc.
+        if _TAB_LINE_RE.match(line.strip()):
+            result.append({"type": "tab", "content": line})
+            continue
+
         if _is_chord_line(line):
             # Preserve full line (with spacing) so positions align with lyric below
             result.append({"type": "chords", "content": line})
         else:
             result.append({"type": "lyrics", "content": line})
+
+    # Post-process: single lyrics lines that appear within a tab block are
+    # technique instructions (e.g. "Parte 2 de 3"), not song lyrics.
+    # Rule: mark a lyrics line as tab if a tab line appears within 5 lines after it
+    # AND no other lyrics line appears in between (i.e. it's an isolated instruction).
+    for i in range(len(result)):
+        if result[i]['type'] != 'lyrics':
+            continue
+        tab_nearby = False
+        other_lyric_before_tab = False
+        for j in range(i + 1, min(len(result), i + 6)):
+            t = result[j]['type']
+            if t == 'tab':
+                tab_nearby = True
+                break
+            if t == 'lyrics':
+                other_lyric_before_tab = True
+                break
+        if tab_nearby and not other_lyric_before_tab:
+            result[i] = {'type': 'tab', 'content': result[i]['content']}
 
     return result
 

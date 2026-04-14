@@ -238,6 +238,7 @@ export default function SongDetailPage() {
   const [semitones, setSemitones] = useState(0);
   const [fontSize,  setFontSize]  = useState(1.2);
   const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
+  const [showTabs,  setShowTabs]  = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollOffset  = useRef(0);
@@ -702,6 +703,14 @@ export default function SongDetailPage() {
               {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
             </button>
             <button style={toolBtnStyle} onClick={handleShare}>{t('share')}</button>
+            {song?.chords_data?.some((l: { type: string }) => l.type === 'tab') && (
+              <button
+                style={{ ...toolBtnStyle, backgroundColor: showTabs ? 'var(--accent)' : 'var(--bg)', color: showTabs ? '#fff' : 'var(--accent)' }}
+                onClick={() => setShowTabs(v => !v)}
+              >
+                {showTabs ? 'Hide tabs' : 'Show tabs'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -760,7 +769,7 @@ export default function SongDetailPage() {
           </div>
         ) : (
           /* ── Normal chord sheet ── */
-          <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} />
+          <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} showTabs={showTabs} />
         )}
       </div>
 
