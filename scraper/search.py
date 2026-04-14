@@ -191,6 +191,72 @@ def search_ug(query: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Cifraclub  (English + Spanish, accessible from cloud IPs)
+# ---------------------------------------------------------------------------
+
+def search_cifraclub(query: str) -> list[dict]:
+    """
+    Search cifraclub.com. Song links match /artist/song/ and live inside <li>
+    elements that contain the title and artist as visible text.
+    """
+    scraper = make_scraper()
+    url = f"https://www.cifraclub.com/pesquisa/?q={quote(query)}"
+
+    try:
+        res = scraper.get(url, timeout=15)
+    except Exception as e:
+        print(f"[cifraclub] request error: {e}", file=sys.stderr)
+        return []
+
+    if res.status_code != 200:
+        print(f"[cifraclub] HTTP {res.status_code}", file=sys.stderr)
+        return []
+
+    soup    = BeautifulSoup(res.text, "html.parser")
+    results = []
+    seen    = set()
+    # Song pages: exactly two path segments, both non-empty lowercase slugs.
+    # Exclude known non-song first segments (categories, blog, artist index, etc.)
+    SONG_HREF = re.compile(r'^/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*/$')
+    NON_SONG_PREFIX = re.compile(
+        r'^/(blog|estilos|musico|artistas?|videos?|cifras?|bandas?|noticias?|letra|tags?|top|ranking)/'
+    )
+    SKIP_TEXT = {"opciones", "options", "cifra"}
+
+    for a in soup.find_all("a", href=SONG_HREF):
+        href = a.get("href", "")
+        if href in seen:
+            continue
+        if NON_SONG_PREFIX.match(href):
+            continue
+        seen.add(href)
+
+        li = a.find_parent("li")
+        container = li if li else a.parent
+        parts = [
+            t.strip()
+            for t in container.get_text("|").split("|")
+            if t.strip() and not t.strip().isdigit()
+            and t.strip().lower() not in SKIP_TEXT
+        ]
+        title  = parts[0] if len(parts) > 0 else ""
+        artist = parts[1] if len(parts) > 1 else ""
+
+        if not title or not artist:
+            continue
+
+        results.append({
+            "title":  title,
+            "artist": artist,
+            "source": "cifraclub",
+            "url":    f"https://www.cifraclub.com{href}",
+        })
+
+    print(f"[cifraclub] found {len(results)} results", file=sys.stderr)
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -206,6 +272,8 @@ if __name__ == "__main__":
         out = search_tab4u(query)
     elif source in ("ug", "ultimate_guitar"):
         out = search_ug(query)
+    elif source == "cifraclub":
+        out = search_cifraclub(query)
     else:
         print(f"Unknown source: {source}", file=sys.stderr)
         sys.exit(1)

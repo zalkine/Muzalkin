@@ -332,6 +332,120 @@ def _parse_ug_content(content: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Cifraclub chord page parser
+# ---------------------------------------------------------------------------
+
+# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, etc.
+_CHORD_WORD_RE = re.compile(
+    r'^[A-G][#b]?'
+    r'(?:m(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+)*'
+    r'(?:\([^)]*\))?'        # optional (4), (9), etc.
+    r'(?:/[A-G][#b]?)?$'
+)
+
+
+def _is_chord_line(line: str) -> bool:
+    """Return True if every space-separated token on the line is a chord name."""
+    words = line.split()
+    return bool(words) and all(_CHORD_WORD_RE.match(w) for w in words)
+
+
+def _parse_cifraclub_content(content: str) -> list:
+    """
+    Parse Cifraclub pre-tag content (positional chord-above-lyric format).
+
+    Em7           G          ← chord line (chord names + spaces for alignment)
+        Today is gonna       ← lyric line (leading spaces preserved for position)
+    [Chorus]                 ← section header
+    """
+    result = []
+
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip()
+
+        # Section header: [Verse 1], [Chorus], [Bridge], etc.
+        sec = re.match(r'^\[([^\]]+)\]', line)
+        if sec:
+            section_text = sec.group(1).strip()
+            result.append({"type": "section", "content": section_text.capitalize()})
+            rest = line[sec.end():].strip()
+            if rest:
+                if _is_chord_line(rest):
+                    result.append({"type": "chords", "content": rest})
+                else:
+                    result.append({"type": "lyrics", "content": rest})
+            continue
+
+        if not line.strip():
+            continue
+
+        if _is_chord_line(line):
+            # Preserve full line (with spacing) so positions align with lyric below
+            result.append({"type": "chords", "content": line})
+        else:
+            result.append({"type": "lyrics", "content": line})
+
+    return result
+
+
+def fetch_cifraclub(url: str) -> dict:
+    """
+    Fetch and parse a Cifraclub chord page.
+
+    Returns { title, artist, language, source, chords_data } or {} on failure.
+    Chord content is in <pre id="js-cifra-content"> as positional plain text.
+    """
+    scraper = make_scraper()
+    print(f"[fetch_cifraclub] fetching: {url}", file=sys.stderr)
+
+    try:
+        res = scraper.get(url, timeout=20)
+    except Exception as e:
+        print(f"[fetch_cifraclub] request error: {e}", file=sys.stderr)
+        return {}
+
+    if res.status_code != 200:
+        print(f"[fetch_cifraclub] HTTP {res.status_code}", file=sys.stderr)
+        return {}
+
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    # Title and artist from og:title  →  "Song - Artist - CHORDS"
+    title, artist = "", ""
+    og = soup.find("meta", property="og:title")
+    if og:
+        raw = og.get("content", "")
+        parts = [p.strip() for p in raw.split(" - ")]
+        # Drop trailing "CHORDS" / "Tabs" suffix
+        parts = [p for p in parts if p.upper() not in ("CHORDS", "TABS", "CIFRA", "ACORDES")]
+        if len(parts) >= 2:
+            title, artist = parts[0], parts[1]
+        elif parts:
+            title = parts[0]
+
+    pre = soup.find("pre", id="js-cifra-content") or soup.find("pre")
+    if not pre:
+        print("[fetch_cifraclub] chord pre not found", file=sys.stderr)
+        return {}
+
+    chords_data = _parse_cifraclub_content(pre.get_text())
+
+    if not chords_data:
+        return {}
+
+    print(f"[fetch_cifraclub] parsed {len(chords_data)} lines, title='{title}', artist='{artist}'",
+          file=sys.stderr)
+
+    return {
+        "title":       title,
+        "artist":      artist,
+        "language":    _detect_language(chords_data),
+        "source":      "cifraclub",
+        "chords_data": chords_data,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -347,6 +461,8 @@ if __name__ == "__main__":
         out = fetch_tab4u(url)
     elif source in ("ultimate_guitar", "ug"):
         out = fetch_ultimate_guitar(url)
+    elif source == "cifraclub":
+        out = fetch_cifraclub(url)
     else:
         print(f"[fetch_chords] Unknown source: {source}", file=sys.stderr)
         sys.exit(1)
