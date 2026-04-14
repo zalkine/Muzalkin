@@ -129,7 +129,12 @@ export function parseChordLyricPair(
  * font and the \xa0 alignment works as Tab4U intended.
  */
 export function normalizeChordData(data: ChordLine[], isRTL = false): ChordLine[] {
-  if (isRTL) return data;
+  // Both RTL (Hebrew/Tab4U) and LTR (English/Cifraclub) use positional spacing:
+  // chords are placed at character positions that align with the lyric below.
+  // The inline segment conversion loses that spacing when chord positions extend
+  // beyond the lyric length, causing adjacent chords to appear merged ("Am7G").
+  // Keep legacy monospace format for all songs — spacing is always correct.
+  return data;
 
   const result: ChordLine[] = [];
   let i = 0;
