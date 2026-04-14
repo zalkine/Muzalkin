@@ -164,18 +164,21 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             const chordContent = hasLyricBelow
               ? splitMergedChords(line.content)
               : splitMergedChords(line.content).replace(/[\u00a0 ]+/g, ' ').trim();
-            // ui-monospace → SF Mono (iOS), Cascadia/Consolas (Windows), system mono
-            // (Android) — all significantly narrower than Courier New, fitting more
-            // content on small screens. Courier New is the last resort fallback only.
-            const MONO = 'ui-monospace, Consolas, "Courier New", monospace';
+            // LTR: ui-monospace → SF Mono (iOS), Cascadia/Consolas (Windows) — narrower
+            //   than Courier New; Courier New as last-resort fallback.
+            // RTL (Hebrew): Courier New MUST come first because SF Mono/Consolas have no
+            //   Hebrew glyphs. If Hebrew chars fell back to a proportional font the \xa0
+            //   spacing would no longer align chords to syllables. Courier New includes
+            //   Hebrew in its monospace cell grid on iOS, macOS, and Windows.
+            const MONO = isRTL
+              ? '"Courier New", Courier, monospace'
+              : 'ui-monospace, Consolas, "Courier New", monospace';
             const monoSize = Math.round(15 * fontSize);
-            // LTR: scale font-size with viewport width so lines fit on mobile without
-            // horizontal scrolling. clamp() keeps a readable minimum (11px) and caps at
-            // the user's chosen size on tablets/desktop.
-            // RTL: fixed px — Tab4U's \xa0 alignment is calibrated for a fixed cell width.
-            const monoFontSize = isRTL
-              ? monoSize
-              : `clamp(11px, ${(monoSize / 480 * 100).toFixed(1)}vw, ${monoSize}px)`;
+            // min(viewport-based, configured-size): on small screens the viewport term
+            // wins, preventing overflow regardless of A+ presses. On tablets/desktop the
+            // configured size wins. Both chord and lyric rows receive the same value, so
+            // the positional \xa0 / space alignment is always preserved.
+            const monoFontSize = `min(3.8vw, ${monoSize}px)`;
             return (
               <div
                 key={i}
@@ -252,10 +255,12 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               // Skip if already rendered above by the preceding 'chords' block
               const prevLine = data[i - 1];
               if (prevLine?.type === 'chords') return null;
-              // RTL: monospace so \xa0 chord alignment is preserved.
-              // LTR: proportional font, matching the inline segment renderer.
+              // RTL: monospace (Courier New — Hebrew glyph support) so \xa0 alignment works.
+              // LTR: proportional font; proportional text wraps naturally, no overflow issue.
               const isMonoLyric = isRTL;
               const lyricSize = isMonoLyric ? Math.round(15 * fontSize) : Math.round(16 * fontSize);
+              // RTL monospace: same min(vw, px) cap as chord rows so lines stay on-screen.
+              const lyricFontSize = isMonoLyric ? `min(3.8vw, ${lyricSize}px)` : lyricSize;
               return (
                 <div key={i} style={{ marginBottom: Math.round(2 * fontSize) }}>
                   <span
@@ -263,9 +268,9 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                       fontFamily: isMonoLyric
                         ? '"Courier New", Courier, monospace'
                         : "'Segoe UI', system-ui, -apple-system, sans-serif",
-                      fontSize: lyricSize,
+                      fontSize: lyricFontSize,
                       color: 'var(--text)',
-                      lineHeight: `${Math.round(lyricSize * 1.55)}px`,
+                      lineHeight: 1.55,
                       whiteSpace: isMonoLyric ? 'pre' : 'pre-wrap',
                       direction: isRTL ? 'rtl' : 'ltr',
                     }}
