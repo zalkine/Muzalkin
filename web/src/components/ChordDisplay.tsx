@@ -164,8 +164,18 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             const chordContent = hasLyricBelow
               ? splitMergedChords(line.content)
               : splitMergedChords(line.content).replace(/[\u00a0 ]+/g, ' ').trim();
-            const MONO = '"Courier New", Courier, monospace';
+            // ui-monospace → SF Mono (iOS), Cascadia/Consolas (Windows), system mono
+            // (Android) — all significantly narrower than Courier New, fitting more
+            // content on small screens. Courier New is the last resort fallback only.
+            const MONO = 'ui-monospace, Consolas, "Courier New", monospace';
             const monoSize = Math.round(15 * fontSize);
+            // LTR: scale font-size with viewport width so lines fit on mobile without
+            // horizontal scrolling. clamp() keeps a readable minimum (11px) and caps at
+            // the user's chosen size on tablets/desktop.
+            // RTL: fixed px — Tab4U's \xa0 alignment is calibrated for a fixed cell width.
+            const monoFontSize = isRTL
+              ? monoSize
+              : `clamp(11px, ${(monoSize / 480 * 100).toFixed(1)}vw, ${monoSize}px)`;
             return (
               <div
                 key={i}
@@ -181,11 +191,11 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                     which aligns each chord above its correct Hebrew syllable). */}
                 <div style={{
                   fontFamily: MONO,
-                  fontSize: monoSize,
+                  fontSize: monoFontSize,
                   fontWeight: 700,
                   color: 'var(--chord-color)',
                   whiteSpace: 'pre',
-                  lineHeight: `${Math.round(monoSize * 1.4)}px`,
+                  lineHeight: 1.4,
                   direction: 'ltr',
                   textAlign: isRTL ? 'right' : 'left',
                 }}>
@@ -195,10 +205,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {hasLyricBelow && (
                   <div style={{
                     fontFamily: MONO,
-                    fontSize: monoSize,
+                    fontSize: monoFontSize,
                     color: 'var(--text)',
                     whiteSpace: 'pre',
-                    lineHeight: `${Math.round(monoSize * 1.55)}px`,
+                    lineHeight: 1.55,
                     direction: isRTL ? 'rtl' : 'ltr',
                   }}>
                     {nextLine.content}
@@ -272,10 +282,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 <div key={i} style={{ marginBottom: Math.round(1 * fontSize) }}>
                   <span
                     style={{
-                      fontFamily: '"Courier New", Courier, monospace',
+                      fontFamily: 'ui-monospace, Consolas, "Courier New", monospace',
                       fontSize: Math.round(13 * fontSize),
                       color: 'var(--text3)',
-                      lineHeight: `${Math.round(13 * fontSize * 1.5)}px`,
+                      lineHeight: 1.5,
                       whiteSpace: 'pre',
                       direction: 'ltr',
                     }}
