@@ -74,6 +74,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           direction: isRTL ? 'rtl' : 'ltr',
           textAlign: isRTL ? 'right' : 'left',
           fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+          overflowX: 'auto',
         }}
       >
         {data.map((line, i) => {
@@ -157,18 +158,19 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             // same font size — the only way &nbsp; widths match across rows.
             //
             // Exception: chords-only lines (no lyric below, e.g. intro) have
-            // no syllables to align against, so collapse runs of \u00a0 to a
-            // single space to avoid visually excessive gaps.
+            // no syllables to align against, so collapse runs of spaces/\u00a0
+            // to a single space to avoid visually excessive gaps.
+            // Tab4U uses \u00a0 for positioning; Cifraclub uses regular spaces.
             const chordContent = hasLyricBelow
               ? splitMergedChords(line.content)
-              : splitMergedChords(line.content).replace(/\u00a0+/g, ' ').trim();
+              : splitMergedChords(line.content).replace(/[\u00a0 ]+/g, ' ').trim();
             const MONO = '"Courier New", Courier, monospace';
             const monoSize = Math.round(15 * fontSize);
             return (
               <div
                 key={i}
                 style={{
-                  marginTop: Math.round(16 * fontSize),
+                  marginTop: Math.round((isRTL ? 16 : 8) * fontSize),
                   marginBottom: Math.round(2 * fontSize),
                 }}
               >
@@ -212,8 +214,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 <div
                   key={i}
                   style={{
-                    marginTop: Math.round(28 * fontSize),
-                    marginBottom: Math.round(8 * fontSize),
+                    marginTop: Math.round((isRTL ? 28 : 14) * fontSize),
+                    marginBottom: Math.round((isRTL ? 8 : 4) * fontSize),
                     textAlign: isRTL ? 'right' : 'left',
                   }}
                 >

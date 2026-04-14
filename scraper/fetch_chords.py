@@ -443,6 +443,28 @@ def _parse_cifraclub_content(content: str) -> list:
         if tab_nearby and not other_lyric_before_tab:
             result[i] = {'type': 'tab', 'content': result[i]['content']}
 
+    # Strip common leading whitespace from chord+lyric pairs to remove
+    # cifraclub page-level indentation while preserving positional alignment.
+    # For standalone chord-only lines, strip all leading whitespace.
+    i = 0
+    while i < len(result):
+        if result[i]['type'] == 'chords':
+            chord_content = result[i]['content']
+            if i + 1 < len(result) and result[i + 1]['type'] == 'lyrics':
+                lyric_content = result[i + 1]['content']
+                chord_indent = len(chord_content) - len(chord_content.lstrip(' '))
+                lyric_indent = len(lyric_content) - len(lyric_content.lstrip(' '))
+                strip_n = min(chord_indent, lyric_indent)
+                if strip_n > 0:
+                    result[i]     = {'type': 'chords', 'content': chord_content[strip_n:]}
+                    result[i + 1] = {'type': 'lyrics', 'content': lyric_content[strip_n:]}
+                i += 2
+            else:
+                result[i] = {'type': 'chords', 'content': chord_content.lstrip()}
+                i += 1
+        else:
+            i += 1
+
     return result
 
 
