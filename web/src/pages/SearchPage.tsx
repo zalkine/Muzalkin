@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useJam } from '../lib/jamContext';
 
 type SearchResult = {
   id?: string;
@@ -29,6 +30,7 @@ function saveRecent(query: string) {
 export default function SearchPage() {
   const { t, i18n } = useTranslation();
   const navigate    = useNavigate();
+  const jam         = useJam();
   const isRTL       = i18n.language === 'he';
 
   const [query,      setQuery]      = useState('');
@@ -278,12 +280,13 @@ export default function SearchPage() {
                 const key    = item.id ?? item.source_url ?? `${idx}`;
                 const isBusy = fetchingId === item.source_url;
                 return (
-                  <li key={key} style={{ animationDelay: `${idx * 40}ms` }}>
+                  <li key={key} style={{ animationDelay: `${idx * 40}ms`, display: 'flex', alignItems: 'center' }}>
                     <button
                       className="song-card"
                       onClick={() => handleSelect(item)}
                       disabled={fetchingId !== null}
                       style={{
+                        flex: 1,
                         flexDirection: isRTL ? 'row-reverse' : 'row',
                         textAlign: isRTL ? 'right' : 'left',
                         cursor: fetchingId !== null ? 'wait' : 'pointer',
@@ -339,6 +342,34 @@ export default function SearchPage() {
                         )
                       }
                     </button>
+
+                    {/* Add to Queue button — shown when a jam session is active */}
+                    {jam.sessionCode && (
+                      <button
+                        onClick={() => jam.addToQueue({
+                          songId: item.id ?? (item.source_url ?? ''),
+                          source: item.id ? 'saved' : 'cached',
+                          title:  item.song_title,
+                          artist: item.artist,
+                        })}
+                        title={t('jam_add_to_queue')}
+                        style={{
+                          flexShrink:      0,
+                          marginInlineStart: 6,
+                          padding:         '6px 10px',
+                          background:      'var(--accent)',
+                          color:           '#fff',
+                          border:          'none',
+                          borderRadius:    8,
+                          fontSize:        12,
+                          fontWeight:      700,
+                          cursor:          'pointer',
+                          whiteSpace:      'nowrap',
+                        }}
+                      >
+                        + {t('jam_queue_title')}
+                      </button>
+                    )}
                   </li>
                 );
               })}

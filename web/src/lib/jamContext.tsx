@@ -3,16 +3,15 @@
  *
  * Manages a real-time jam session using Supabase Realtime.
  *
- * Architecture:
- *   - Each session has a 6-char code (e.g. "ABC123") stored in the
- *     `jam_sessions` Supabase table for persistence.
- *   - All live events (song changes, scroll position) travel through a
- *     Supabase Realtime Broadcast channel named "jam:<code>".
- *   - Presence is used to count and display connected participants.
- *
  * Roles:
- *   host   → created the session; can change songs, end session.
- *   viewer → joined via code; follows host's song & scroll.
+ *   jamaneger → created the session or is the first to join;
+ *               controls queue, transpose, scroll speed, can kick/promote.
+ *   jamember  → joined after the first two; follows the jamaneger's state,
+ *               can add songs to the queue.
+ *
+ * Manager rule: first two users (creator + first joiner) become jamanegers,
+ * enforced atomically by the join_jam_session() DB function.
+ * Jamanegers can also promote any jamember to jamaneger at any time.
  */
 
 import {
@@ -30,7 +29,7 @@ import { supabase } from './supabase';
 // Types
 // ---------------------------------------------------------------------------
 
-export type JamRole = 'host' | 'viewer' | null;
+export type JamRole = 'jamaneger' | 'jamember' | null;
 
 export type SongRef = {
   songId: string;
@@ -39,35 +38,72 @@ export type SongRef = {
   artist: string;
 };
 
-type JamBroadcastEvent =
-  | { type: 'song_change';  payload: SongRef }
-  | { type: 'scroll_sync';  payload: { position: number } }
-  | { type: 'session_end';  payload: Record<string, never> };
+export type QueueItem = {
+  id:       string;
+  songId:   string;
+  source:   'cached' | 'saved';
+  title:    string;
+  artist:   string;
+  position: number;
+  addedBy:  string | null;
+};
+
+export type JamMember = {
+  userId:      string;
+  displayName: string;
+  role:        'jamaneger' | 'jamember';
+};
 
 export type JamContextValue = {
-  role:             JamRole;
-  sessionCode:      string | null;
-  participantCount: number;
-  isConnected:      boolean;
+  role:               JamRole;
+  sessionCode:        string | null;
+  sessionId:          string | null;
+  participantCount:   number;
+  isConnected:        boolean;
+  members:            JamMember[];
+  queue:              QueueItem[];
+  currentQueueItemId: string | null;
+  semitones:          number;
+  speedIndex:         number;
 
-  /** Host: create a new session and navigate to the first song. */
-  startSession: (song: SongRef) => Promise<string | null>;
-  /** Viewer: join an existing session by code. Returns the current song if found. */
-  joinSession:  (code: string) => Promise<SongRef | null>;
-  /** Host: end the session for everyone. */
-  endSession:   () => Promise<void>;
-  /** Viewer: leave without ending the session. */
-  leaveSession: () => void;
+  /** Jamaneger: create a new session. Returns the 6-char code. */
+  startSession:    (song: SongRef) => Promise<string | null>;
+  /** Anyone: join an existing session by code. Returns the current song if found. */
+  joinSession:     (code: string) => Promise<SongRef | null>;
+  /** Jamaneger: end the session for everyone. */
+  endSession:      () => Promise<void>;
+  /** Jamember: leave without ending the session. */
+  leaveSession:    () => void;
 
-  /** Host: broadcast a song change to all viewers. */
+  /** Jamaneger: broadcast a song change to all. */
   broadcastSongChange: (song: SongRef) => void;
-  /** Host: broadcast current scroll position (~2 fps). */
+  /** Jamaneger: broadcast scroll position (~2 fps throttle). */
   broadcastScroll:     (position: number) => void;
+  /** Jamaneger: broadcast transpose change. */
+  broadcastTranspose:  (semitones: number) => void;
+  /** Jamaneger: broadcast scroll-speed index change. */
+  broadcastSpeed:      (speedIndex: number) => void;
 
-  /** Subscribe to song-change events (viewer). Returns an unsubscribe fn. */
+  /** Subscribe to song-change events. Returns unsubscribe fn. */
   onSongChange: (handler: (song: SongRef) => void) => () => void;
-  /** Subscribe to scroll-sync events (viewer). Returns an unsubscribe fn. */
-  onScrollSync: (handler: (position: number) => void) => () => void;
+  /** Subscribe to scroll-sync events. Returns unsubscribe fn. */
+  onScrollSync: (handler: (pos: number) => void) => () => void;
+
+  /** Anyone: add a song to the queue. Broadcasts queue_update to all. */
+  addToQueue:      (song: SongRef) => Promise<void>;
+  /** Jamaneger: remove a song from the queue. */
+  removeFromQueue: (queueItemId: string) => Promise<void>;
+  /** Jamaneger: reorder queue by providing ordered item IDs. */
+  reorderQueue:    (orderedIds: string[]) => Promise<void>;
+  /** Jamaneger: set a queue item as the current song. */
+  selectSong:      (queueItemId: string) => void;
+  /** Jamaneger: advance to next song in queue. */
+  playNext:        () => void;
+
+  /** Jamaneger: remove a member from the session. */
+  kickMember:      (userId: string) => Promise<void>;
+  /** Jamaneger: promote a jamember to jamaneger. */
+  promoteMember:   (userId: string) => Promise<void>;
 };
 
 // ---------------------------------------------------------------------------
@@ -77,7 +113,9 @@ export type JamContextValue = {
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
 
 function generateCode(): string {
-  return Array.from({ length: 6 }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join('');
+  return Array.from({ length: 6 }, () =>
+    CHARS[Math.floor(Math.random() * CHARS.length)],
+  ).join('');
 }
 
 // ---------------------------------------------------------------------------
@@ -97,39 +135,84 @@ export function useJam(): JamContextValue {
 // ---------------------------------------------------------------------------
 
 export function JamProvider({ children }: { children: React.ReactNode }) {
-  const [role,             setRole]             = useState<JamRole>(null);
-  const [sessionCode,      setSessionCode]      = useState<string | null>(null);
-  const [participantCount, setParticipantCount] = useState(0);
-  const [isConnected,      setIsConnected]      = useState(false);
+  const [role,               setRole]               = useState<JamRole>(null);
+  const [sessionCode,        setSessionCode]        = useState<string | null>(null);
+  const [sessionId,          setSessionId]          = useState<string | null>(null);
+  const [participantCount,   setParticipantCount]   = useState(0);
+  const [isConnected,        setIsConnected]        = useState(false);
+  const [members,            setMembers]            = useState<JamMember[]>([]);
+  const [queue,              setQueue]              = useState<QueueItem[]>([]);
+  const [currentQueueItemId, setCurrentQueueItemId] = useState<string | null>(null);
+  const [semitones,          setSemitones]          = useState(0);
+  const [speedIndex,         setSpeedIndex]         = useState(1);
 
-  const channelRef           = useRef<RealtimeChannel | null>(null);
-  const songChangeHandlers   = useRef<Set<(song: SongRef) => void>>(new Set());
-  const scrollSyncHandlers   = useRef<Set<(pos: number) => void>>(new Set());
-  // Throttle scroll broadcast to ~2 fps
-  const lastScrollBroadcast  = useRef(0);
+  const channelRef          = useRef<RealtimeChannel | null>(null);
+  const sessionIdRef        = useRef<string | null>(null);
+  const roleRef             = useRef<JamRole>(null);
+  const currentUserIdRef    = useRef<string | null>(null);
+  const songChangeHandlers  = useRef<Set<(song: SongRef) => void>>(new Set());
+  const scrollSyncHandlers  = useRef<Set<(pos: number) => void>>(new Set());
+  const lastScrollBroadcast = useRef(0);
 
-  // ------------------------------------------------------------------
-  // Internal: create/join a Realtime channel for a given code
-  // ------------------------------------------------------------------
-  const joinChannel = useCallback((code: string, asRole: 'host' | 'viewer') => {
-    // Clean up any previous channel
+  // Keep refs in sync so callbacks always see current values without stale closures
+  useEffect(() => { roleRef.current = role; }, [role]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+
+  // ---------------------------------------------------------------------------
+  // Internal helpers
+  // ---------------------------------------------------------------------------
+
+  const dbRowsToQueueItems = (rows: Record<string, unknown>[]): QueueItem[] =>
+    rows.map(r => ({
+      id:       r.id as string,
+      songId:   r.song_id as string,
+      source:   r.source as 'cached' | 'saved',
+      title:    r.title as string,
+      artist:   r.artist as string,
+      position: r.position as number,
+      addedBy:  r.added_by as string | null,
+    }));
+
+  const broadcastQueueUpdate = useCallback((updatedQueue: QueueItem[]) => {
+    channelRef.current?.send({
+      type: 'broadcast', event: 'queue_update',
+      payload: { queue: updatedQueue },
+    });
+  }, []);
+
+  const broadcastMemberList = useCallback((updatedMembers: JamMember[]) => {
+    channelRef.current?.send({
+      type: 'broadcast', event: 'member_list',
+      payload: { members: updatedMembers },
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // joinChannel — internal; creates/reuses the Supabase Realtime channel
+  // ---------------------------------------------------------------------------
+  const joinChannel = useCallback((
+    code: string,
+    asRole: 'jamaneger' | 'jamember',
+    userId: string,
+    displayName: string,
+  ) => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
     const channel = supabase.channel(`jam:${code}`, {
-      config: { presence: { key: asRole === 'host' ? 'host' : undefined } },
+      config: { presence: { key: userId } },
     });
 
-    // Presence: count connected participants
+    // Presence: count connected users
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
-      const count = Object.values(state).flat().length;
-      setParticipantCount(count);
+      setParticipantCount(Object.values(state).flat().length);
     });
 
-    // Broadcast: receive events from host
+    // ── Broadcast listeners ────────────────────────────────────────────────
+
     channel.on('broadcast', { event: 'song_change' }, ({ payload }: { payload: SongRef }) => {
       songChangeHandlers.current.forEach(h => h(payload));
     });
@@ -139,22 +222,69 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     });
 
     channel.on('broadcast', { event: 'session_end' }, () => {
-      // Host ended the session — clean up viewer state
-      setRole(null);
-      setSessionCode(null);
-      setIsConnected(false);
-      setParticipantCount(0);
+      setRole(null); setSessionCode(null); setSessionId(null);
+      setIsConnected(false); setParticipantCount(0);
+      setMembers([]); setQueue([]); setCurrentQueueItemId(null);
       supabase.removeChannel(channel);
       channelRef.current = null;
-      // Notify song-change listeners with a sentinel so SongDetailPage can go back
+      // Empty songId signals SongDetailPage to navigate back
       songChangeHandlers.current.forEach(h =>
         h({ songId: '', source: 'cached', title: '', artist: '' }),
       );
     });
 
+    channel.on('broadcast', { event: 'transpose_change' }, ({ payload }: { payload: { semitones: number } }) => {
+      setSemitones(payload.semitones);
+    });
+
+    channel.on('broadcast', { event: 'speed_change' }, ({ payload }: { payload: { speedIndex: number } }) => {
+      setSpeedIndex(payload.speedIndex);
+    });
+
+    channel.on('broadcast', { event: 'queue_update' }, ({ payload }: { payload: { queue: QueueItem[] } }) => {
+      setQueue(payload.queue);
+    });
+
+    channel.on('broadcast', { event: 'song_selected' }, ({ payload }: { payload: { queueItemId: string } & SongRef }) => {
+      setCurrentQueueItemId(payload.queueItemId);
+      songChangeHandlers.current.forEach(h => h(payload));
+    });
+
+    channel.on('broadcast', { event: 'member_list' }, ({ payload }: { payload: { members: JamMember[] } }) => {
+      setMembers(payload.members);
+    });
+
+    channel.on('broadcast', { event: 'role_change' }, ({ payload }: { payload: { userId: string; role: 'jamaneger' | 'jamember' } }) => {
+      // If this user was promoted, update their own role
+      if (payload.userId === currentUserIdRef.current) {
+        setRole(payload.role);
+        roleRef.current = payload.role;
+      }
+      setMembers(prev => prev.map(m =>
+        m.userId === payload.userId ? { ...m, role: payload.role } : m,
+      ));
+    });
+
+    channel.on('broadcast', { event: 'remove_participant' }, ({ payload }: { payload: { userId: string } }) => {
+      if (payload.userId === currentUserIdRef.current) {
+        // This user was kicked — clean up
+        setRole(null); setSessionCode(null); setSessionId(null);
+        setIsConnected(false); setParticipantCount(0);
+        setMembers([]); setQueue([]); setCurrentQueueItemId(null);
+        supabase.removeChannel(channel);
+        channelRef.current = null;
+        // Signal SongDetailPage to navigate back
+        songChangeHandlers.current.forEach(h =>
+          h({ songId: '', source: 'cached', title: '', artist: '' }),
+        );
+      } else {
+        setMembers(prev => prev.filter(m => m.userId !== payload.userId));
+      }
+    });
+
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await channel.track({ role: asRole });
+        await channel.track({ userId, role: asRole, displayName });
         setIsConnected(true);
       }
     });
@@ -162,58 +292,133 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     channelRef.current = channel;
   }, []);
 
-  // ------------------------------------------------------------------
-  // startSession (host)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // startSession (jamaneger — creator)
+  // ---------------------------------------------------------------------------
   const startSession = useCallback(async (song: SongRef): Promise<string | null> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
+    currentUserIdRef.current = user.id;
 
-    // Try up to 5 times to get a unique code (collision extremely unlikely)
+    const displayName = user.user_metadata?.full_name ?? user.email ?? 'Jamaneger';
+
     let code = '';
+    let newSessionId = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       code = generateCode();
-      const { error } = await supabase.from('jam_sessions').insert({
+      const { data, error } = await supabase.from('jam_sessions').insert({
         code,
         host_user_id:        user.id,
         current_song_id:     song.songId,
         current_song_source: song.source,
         is_active:           true,
-      });
-      if (!error) break;
+        current_transpose:   0,
+        current_speed_index: 1,
+      }).select('id').single();
+      if (!error && data) { newSessionId = data.id; break; }
       code = '';
     }
-    if (!code) return null;
+    if (!code || !newSessionId) return null;
 
-    joinChannel(code, 'host');
-    setRole('host');
+    // Register creator as first jamaneger via DB function
+    await supabase.rpc('join_jam_session', {
+      p_session_id:   newSessionId,
+      p_user_id:      user.id,
+      p_display_name: displayName,
+    });
+
+    // Seed queue with the opening song
+    const { data: queueRow } = await supabase.from('jam_queue').insert({
+      session_id: newSessionId,
+      song_id:    song.songId,
+      source:     song.source,
+      title:      song.title,
+      artist:     song.artist,
+      position:   0,
+      added_by:   user.id,
+    }).select('*').single();
+
+    const initialQueue = queueRow ? dbRowsToQueueItems([queueRow]) : [];
+
+    joinChannel(code, 'jamaneger', user.id, displayName);
+    setRole('jamaneger');
     setSessionCode(code);
+    setSessionId(newSessionId);
+    setQueue(initialQueue);
+    setCurrentQueueItemId(queueRow?.id ?? null);
+    setSemitones(0);
+    setSpeedIndex(1);
+    setMembers([{ userId: user.id, displayName, role: 'jamaneger' }]);
+
     return code;
   }, [joinChannel]);
 
-  // ------------------------------------------------------------------
-  // joinSession (viewer)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // joinSession (anyone joining by code)
+  // ---------------------------------------------------------------------------
   const joinSession = useCallback(async (code: string): Promise<SongRef | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    currentUserIdRef.current = user.id;
+
     const upper = code.toUpperCase().trim();
-    const { data, error } = await supabase
+    const { data: session, error } = await supabase
       .from('jam_sessions')
-      .select('id, current_song_id, current_song_source, is_active')
+      .select('id, current_song_id, current_song_source, current_transpose, current_speed_index')
       .eq('code', upper)
       .eq('is_active', true)
       .single();
 
-    if (error || !data) return null;
+    if (error || !session) return null;
 
-    joinChannel(upper, 'viewer');
-    setRole('viewer');
+    const displayName = user.user_metadata?.full_name ?? user.email ?? 'Jamember';
+
+    // Atomically determine role (first joiner → jamaneger, rest → jamember)
+    const { data: assignedRole } = await supabase.rpc('join_jam_session', {
+      p_session_id:   session.id,
+      p_user_id:      user.id,
+      p_display_name: displayName,
+    }) as { data: 'jamaneger' | 'jamember' | null };
+
+    const role = assignedRole ?? 'jamember';
+
+    // Fetch current queue
+    const { data: queueRows } = await supabase
+      .from('jam_queue')
+      .select('*')
+      .eq('session_id', session.id)
+      .order('position', { ascending: true });
+
+    // Fetch current member list
+    const { data: memberRows } = await supabase
+      .from('jam_members')
+      .select('user_id, display_name, role')
+      .eq('session_id', session.id);
+
+    const currentQueue = dbRowsToQueueItems(queueRows ?? []);
+    const currentMembers: JamMember[] = (memberRows ?? []).map(m => ({
+      userId:      m.user_id as string,
+      displayName: m.display_name as string,
+      role:        m.role as 'jamaneger' | 'jamember',
+    }));
+
+    joinChannel(upper, role, user.id, displayName);
+    setRole(role);
     setSessionCode(upper);
+    setSessionId(session.id);
+    setQueue(currentQueue);
+    setMembers(currentMembers);
+    setSemitones(session.current_transpose ?? 0);
+    setSpeedIndex(session.current_speed_index ?? 1);
 
-    // Return the current song so the caller can navigate to it
-    if (data.current_song_id) {
+    // Find which queue item matches the current song
+    const currentItem = currentQueue.find(q => q.songId === session.current_song_id);
+    setCurrentQueueItemId(currentItem?.id ?? null);
+
+    if (session.current_song_id) {
       return {
-        songId: data.current_song_id,
-        source: data.current_song_source as 'cached' | 'saved',
+        songId: session.current_song_id,
+        source: session.current_song_source as 'cached' | 'saved',
         title:  '',
         artist: '',
       };
@@ -221,20 +426,16 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     return null;
   }, [joinChannel]);
 
-  // ------------------------------------------------------------------
-  // endSession (host)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // endSession (jamaneger)
+  // ---------------------------------------------------------------------------
   const endSession = useCallback(async () => {
     if (!sessionCode || !channelRef.current) return;
 
-    // Broadcast end event to all viewers
     await channelRef.current.send({
-      type:    'broadcast',
-      event:   'session_end',
-      payload: {},
+      type: 'broadcast', event: 'session_end', payload: {},
     });
 
-    // Mark session as inactive in DB
     await supabase
       .from('jam_sessions')
       .update({ is_active: false })
@@ -242,63 +443,232 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     supabase.removeChannel(channelRef.current);
     channelRef.current = null;
-    setRole(null);
-    setSessionCode(null);
-    setIsConnected(false);
-    setParticipantCount(0);
+    setRole(null); setSessionCode(null); setSessionId(null);
+    setIsConnected(false); setParticipantCount(0);
+    setMembers([]); setQueue([]); setCurrentQueueItemId(null);
   }, [sessionCode]);
 
-  // ------------------------------------------------------------------
-  // leaveSession (viewer)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // leaveSession (jamember)
+  // ---------------------------------------------------------------------------
   const leaveSession = useCallback(() => {
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-    setRole(null);
-    setSessionCode(null);
-    setIsConnected(false);
-    setParticipantCount(0);
+    // Remove from DB so member list updates for others
+    if (sessionIdRef.current && currentUserIdRef.current) {
+      supabase.from('jam_members')
+        .delete()
+        .eq('session_id', sessionIdRef.current)
+        .eq('user_id', currentUserIdRef.current)
+        .then(() => {});
+    }
+    setRole(null); setSessionCode(null); setSessionId(null);
+    setIsConnected(false); setParticipantCount(0);
+    setMembers([]); setQueue([]); setCurrentQueueItemId(null);
   }, []);
 
-  // ------------------------------------------------------------------
-  // Broadcast helpers (host only)
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Broadcast helpers
+  // ---------------------------------------------------------------------------
+
   const broadcastSongChange = useCallback((song: SongRef) => {
-    if (!channelRef.current || role !== 'host') return;
+    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
 
     channelRef.current.send({
-      type:    'broadcast',
-      event:   'song_change',
-      payload: song,
-    }).catch((err: unknown) => console.error('[jam] broadcastSongChange failed:', err));
+      type: 'broadcast', event: 'song_change', payload: song,
+    }).catch((err: unknown) => console.error('[jam] broadcastSongChange:', err));
 
-    // Also persist current song to DB
-    if (sessionCode) {
+    if (sessionIdRef.current) {
       supabase.from('jam_sessions').update({
         current_song_id:     song.songId,
         current_song_source: song.source,
-      }).eq('code', sessionCode)
-        .then(({ error }) => { if (error) console.error('[jam] DB update failed:', error.message); });
+      }).eq('id', sessionIdRef.current).then(() => {});
     }
-  }, [role, sessionCode]);
+  }, []);
 
   const broadcastScroll = useCallback((position: number) => {
-    if (!channelRef.current || role !== 'host') return;
+    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
     const now = Date.now();
-    if (now - lastScrollBroadcast.current < 500) return; // max 2fps
+    if (now - lastScrollBroadcast.current < 500) return;
     lastScrollBroadcast.current = now;
     channelRef.current.send({
-      type:    'broadcast',
-      event:   'scroll_sync',
-      payload: { position },
+      type: 'broadcast', event: 'scroll_sync', payload: { position },
     });
-  }, [role]);
+  }, []);
 
-  // ------------------------------------------------------------------
+  const broadcastTranspose = useCallback((newSemitones: number) => {
+    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    setSemitones(newSemitones);
+    channelRef.current.send({
+      type: 'broadcast', event: 'transpose_change', payload: { semitones: newSemitones },
+    });
+    if (sessionIdRef.current) {
+      supabase.from('jam_sessions')
+        .update({ current_transpose: newSemitones })
+        .eq('id', sessionIdRef.current).then(() => {});
+    }
+  }, []);
+
+  const broadcastSpeed = useCallback((newSpeedIndex: number) => {
+    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    setSpeedIndex(newSpeedIndex);
+    channelRef.current.send({
+      type: 'broadcast', event: 'speed_change', payload: { speedIndex: newSpeedIndex },
+    });
+    if (sessionIdRef.current) {
+      supabase.from('jam_sessions')
+        .update({ current_speed_index: newSpeedIndex })
+        .eq('id', sessionIdRef.current).then(() => {});
+    }
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Queue management
+  // ---------------------------------------------------------------------------
+
+  const addToQueue = useCallback(async (song: SongRef) => {
+    if (!sessionIdRef.current) return;
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Position = current max + 1
+    const maxPos = queue.length > 0
+      ? Math.max(...queue.map(q => q.position)) + 1
+      : 0;
+
+    const { data: row } = await supabase.from('jam_queue').insert({
+      session_id: sessionIdRef.current,
+      song_id:    song.songId,
+      source:     song.source,
+      title:      song.title,
+      artist:     song.artist,
+      position:   maxPos,
+      added_by:   user?.id ?? null,
+    }).select('*').single();
+
+    if (!row) return;
+    const updated = [...queue, ...dbRowsToQueueItems([row])];
+    setQueue(updated);
+    broadcastQueueUpdate(updated);
+  }, [queue, broadcastQueueUpdate]);
+
+  const removeFromQueue = useCallback(async (queueItemId: string) => {
+    if (roleRef.current !== 'jamaneger') return;
+    await supabase.from('jam_queue').delete().eq('id', queueItemId);
+    const updated = queue.filter(q => q.id !== queueItemId);
+    setQueue(updated);
+    broadcastQueueUpdate(updated);
+  }, [queue, broadcastQueueUpdate]);
+
+  const reorderQueue = useCallback(async (orderedIds: string[]) => {
+    if (roleRef.current !== 'jamaneger') return;
+    const reordered = orderedIds
+      .map((id, pos) => {
+        const item = queue.find(q => q.id === id);
+        return item ? { ...item, position: pos } : null;
+      })
+      .filter(Boolean) as QueueItem[];
+
+    // Bulk update positions in DB
+    await Promise.all(
+      reordered.map(item =>
+        supabase.from('jam_queue').update({ position: item.position }).eq('id', item.id),
+      ),
+    );
+    setQueue(reordered);
+    broadcastQueueUpdate(reordered);
+  }, [queue, broadcastQueueUpdate]);
+
+  const selectSong = useCallback((queueItemId: string) => {
+    if (roleRef.current !== 'jamaneger') return;
+    const item = queue.find(q => q.id === queueItemId);
+    if (!item) return;
+    setCurrentQueueItemId(queueItemId);
+
+    const songRef: SongRef = {
+      songId: item.songId,
+      source: item.source,
+      title:  item.title,
+      artist: item.artist,
+    };
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'song_selected',
+      payload: { ...songRef, queueItemId },
+    });
+
+    // Also update DB current song
+    if (sessionIdRef.current) {
+      supabase.from('jam_sessions').update({
+        current_song_id:     item.songId,
+        current_song_source: item.source,
+      }).eq('id', sessionIdRef.current).then(() => {});
+    }
+
+    // Notify local song-change handlers (so SongDetailPage navigates)
+    songChangeHandlers.current.forEach(h => h(songRef));
+  }, [queue]);
+
+  const playNext = useCallback(() => {
+    if (roleRef.current !== 'jamaneger' || queue.length === 0) return;
+    const sorted = [...queue].sort((a, b) => a.position - b.position);
+    const currentIndex = sorted.findIndex(q => q.id === currentQueueItemId);
+    const next = sorted[currentIndex + 1] ?? sorted[0];
+    if (next) selectSong(next.id);
+  }, [queue, currentQueueItemId, selectSong]);
+
+  // ---------------------------------------------------------------------------
+  // Member management
+  // ---------------------------------------------------------------------------
+
+  const kickMember = useCallback(async (userId: string) => {
+    if (roleRef.current !== 'jamaneger' || !sessionIdRef.current) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.rpc('kick_jam_member', {
+      p_session_id:         sessionIdRef.current,
+      p_target_user_id:     userId,
+      p_requesting_user_id: user.id,
+    });
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'remove_participant', payload: { userId },
+    });
+
+    const updated = members.filter(m => m.userId !== userId);
+    setMembers(updated);
+    broadcastMemberList(updated);
+  }, [members, broadcastMemberList]);
+
+  const promoteMember = useCallback(async (userId: string) => {
+    if (roleRef.current !== 'jamaneger' || !sessionIdRef.current) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase.rpc('promote_jam_member', {
+      p_session_id:         sessionIdRef.current,
+      p_target_user_id:     userId,
+      p_requesting_user_id: user.id,
+    });
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'role_change',
+      payload: { userId, role: 'jamaneger' },
+    });
+
+    const updated = members.map(m =>
+      m.userId === userId ? { ...m, role: 'jamaneger' as const } : m,
+    );
+    setMembers(updated);
+    broadcastMemberList(updated);
+  }, [members, broadcastMemberList]);
+
+  // ---------------------------------------------------------------------------
   // Subscription helpers
-  // ------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+
   const onSongChange = useCallback((handler: (song: SongRef) => void) => {
     songChangeHandlers.current.add(handler);
     return () => { songChangeHandlers.current.delete(handler); };
@@ -312,25 +682,18 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
   }, []);
 
   const value: JamContextValue = {
-    role,
-    sessionCode,
-    participantCount,
-    isConnected,
-    startSession,
-    joinSession,
-    endSession,
-    leaveSession,
-    broadcastSongChange,
-    broadcastScroll,
-    onSongChange,
-    onScrollSync,
+    role, sessionCode, sessionId, participantCount, isConnected,
+    members, queue, currentQueueItemId, semitones, speedIndex,
+    startSession, joinSession, endSession, leaveSession,
+    broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed,
+    onSongChange, onScrollSync,
+    addToQueue, removeFromQueue, reorderQueue, selectSong, playNext,
+    kickMember, promoteMember,
   };
 
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;

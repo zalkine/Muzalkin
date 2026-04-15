@@ -311,23 +311,23 @@ export default function SongDetailPage() {
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
-    if (!song || jam.role !== 'host') return;
+    if (!song || jam.role !== 'jamaneger') return;
     jam.broadcastSongChange({
       songId: song.id,
       source: 'cached',
       title:  song.song_title,
       artist: song.artist,
     });
-  // Intentionally only re-run when the song id changes while hosting
+  // Intentionally only re-run when the song id changes while managing
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song?.id, jam.role]);
 
-  // Viewer: navigate when host changes song
+  // Jamember: navigate when jamaneger changes song
   useEffect(() => {
-    if (jam.role !== 'viewer') return;
+    if (jam.role !== 'jamember') return;
     return jam.onSongChange((ref) => {
       if (!ref.songId) {
-        // Empty songId = session ended signal
+        // Empty songId = session ended or kicked signal
         navigate('/search');
         return;
       }
@@ -337,9 +337,9 @@ export default function SongDetailPage() {
     });
   }, [jam, id, navigate]);
 
-  // Viewer: sync scroll from host
+  // Jamember: sync scroll from jamaneger
   useEffect(() => {
-    if (jam.role !== 'viewer') return;
+    if (jam.role !== 'jamember') return;
     return jam.onScrollSync((pos) => {
       if (scrollAreaRef.current) {
         scrollAreaRef.current.scrollTo({ top: pos, behavior: 'smooth' });
@@ -347,6 +347,17 @@ export default function SongDetailPage() {
       }
     });
   }, [jam]);
+
+  // Jamember: sync transpose + speed from jamaneger via context
+  useEffect(() => {
+    if (jam.role !== 'jamember') return;
+    setSemitones(jam.semitones);
+  }, [jam.role, jam.semitones]);
+
+  useEffect(() => {
+    if (jam.role !== 'jamember') return;
+    setSpeedIndex(jam.speedIndex);
+  }, [jam.role, jam.speedIndex]);
 
   // ---------------------------------------------------------------------------
   // Save to songs table
@@ -600,7 +611,7 @@ export default function SongDetailPage() {
           </button>
         )}
 
-        {/* Start Jam button (host) or Jam active indicator (viewer) */}
+        {/* Start Jam button (no session) or Jam active indicator */}
         {!editMode && jam.role === null && session && (
           <button
             onClick={() => setShowJamModal(true)}
@@ -610,9 +621,9 @@ export default function SongDetailPage() {
             🎸
           </button>
         )}
-        {!editMode && jam.role === 'viewer' && (
+        {!editMode && jam.role === 'jamember' && (
           <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>
-            🎸 {t('jam_viewer_label')}
+            🎸 {t('jam_jamember_label')}
           </span>
         )}
 
@@ -669,31 +680,53 @@ export default function SongDetailPage() {
             >A+</button>
           </div>
 
-          {/* Transpose */}
+          {/* Transpose — jamaneger broadcasts; jamember sees read-only */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.max(-11, s - 1))}>
-              {t('transpose_down')}
-            </button>
+            {jam.role !== 'jamember' && (
+              <button style={toolBtnStyle} onClick={() => {
+                const next = Math.max(-11, semitones - 1);
+                setSemitones(next);
+                if (jam.role === 'jamaneger') jam.broadcastTranspose(next);
+              }}>
+                {t('transpose_down')}
+              </button>
+            )}
             <button
-              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap' }}
-              onClick={() => setSemitones(0)}
+              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap', cursor: jam.role === 'jamember' ? 'default' : 'pointer' }}
+              onClick={() => {
+                if (jam.role === 'jamember') return;
+                setSemitones(0);
+                if (jam.role === 'jamaneger') jam.broadcastTranspose(0);
+              }}
             >
               {semitones > 0 ? '+' : ''}{semitones / 2} {t('semitones')}
             </button>
-            <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.min(11, s + 1))}>
-              {t('transpose_up')}
-            </button>
+            {jam.role !== 'jamember' && (
+              <button style={toolBtnStyle} onClick={() => {
+                const next = Math.min(11, semitones + 1);
+                setSemitones(next);
+                if (jam.role === 'jamaneger') jam.broadcastTranspose(next);
+              }}>
+                {t('transpose_up')}
+              </button>
+            )}
           </div>
 
           {/* Scroll + share + playlist */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
-              onClick={() => adjustSpeed(-1)} disabled={speedIndex === 0}>−</button>
+            {jam.role !== 'jamember' && (
+              <button style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
+                onClick={() => { adjustSpeed(-1); if (jam.role === 'jamaneger') jam.broadcastSpeed(Math.max(0, speedIndex - 1)); }}
+                disabled={speedIndex === 0}>−</button>
+            )}
             <span style={{ fontSize: 12, fontWeight: 700, minWidth: 32, textAlign: 'center', color: 'var(--text)' }}>
               {`×${SCROLL_SPEEDS[speedIndex].toFixed(1)}`}
             </span>
-            <button style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
-              onClick={() => adjustSpeed(1)} disabled={speedIndex === SCROLL_SPEEDS.length - 1}>+</button>
+            {jam.role !== 'jamember' && (
+              <button style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
+                onClick={() => { adjustSpeed(1); if (jam.role === 'jamaneger') jam.broadcastSpeed(Math.min(SCROLL_SPEEDS.length - 1, speedIndex + 1)); }}
+                disabled={speedIndex === SCROLL_SPEEDS.length - 1}>+</button>
+            )}
             <button
               style={{ ...toolBtnStyle, backgroundColor: scrolling ? 'var(--accent)' : 'var(--bg)', color: scrolling ? '#fff' : 'var(--accent)' }}
               onClick={toggleScroll}
@@ -720,7 +753,7 @@ export default function SongDetailPage() {
         onScroll={e => {
           const top = (e.target as HTMLDivElement).scrollTop;
           scrollOffset.current = top;
-          if (jam.role === 'host') jam.broadcastScroll(top);
+          if (jam.role === 'jamaneger') jam.broadcastScroll(top);
         }}
       >
         {editMode ? (
