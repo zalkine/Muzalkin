@@ -225,42 +225,58 @@ export default function TunerPage() {
               strokeWidth={TRACK_W} strokeLinecap="round" opacity={running ? 0.85 : 0.3}/>
           ))}
 
-          {/* Tick marks */}
+          {/* Tick marks — outside the arc */}
           {Array.from({ length: 11 }, (_, i) => {
             const angleDeg = -150 + i * 30;
-            const [x1, y1] = polar(angleDeg, R + TRACK_W / 2 + 6);
-            const [x2, y2] = polar(angleDeg, R + TRACK_W / 2 + 12);
+            const [x1, y1] = polar(angleDeg, R + TRACK_W / 2 + 4);
+            const [x2, y2] = polar(angleDeg, R + TRACK_W / 2 + 10);
             return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
               stroke="rgba(255,255,255,0.35)" strokeWidth={i === 5 ? 2.5 : 1.5} strokeLinecap="round"/>;
           })}
 
-          {/* Needle */}
+          {/* ── Center hole — drawn BEFORE needle so needle renders on top ── */}
+          <circle cx={CX} cy={CY} r={R - TRACK_W / 2 - 2} fill="#0c0c1a"/>
+
+          {/* ── Needle — on top of center circle ─────────────────────────── */}
+          {/*  Tip reaches to inner edge of arc (R − TRACK_W) = 112 from center  */}
+          {/*  Base is 22 px from center so pivot dot covers it                  */}
           <g transform={`rotate(${needleAngle}, ${CX}, ${CY})`} filter="url(#glow)">
-            <line x1={CX} y1={CY - R + TRACK_W + 10} x2={CX} y2={CY - 28}
-              stroke={running ? tuneColor : 'rgba(255,255,255,0.4)'}
-              strokeWidth={3} strokeLinecap="round"/>
-            <circle cx={CX} cy={CY - R + TRACK_W + 10} r={4}
-              fill={running ? tuneColor : 'rgba(255,255,255,0.4)'}/>
+            <line
+              x1={CX} y1={CY - 22}
+              x2={CX} y2={CY - (R - TRACK_W)}
+              stroke={running ? tuneColor : 'rgba(255,255,255,0.45)'}
+              strokeWidth={3} strokeLinecap="round"
+            />
+            {/* Tip dot at the arc */}
+            <circle cx={CX} cy={CY - (R - TRACK_W)} r={5}
+              fill={running ? tuneColor : 'rgba(255,255,255,0.45)'}/>
           </g>
 
-          {/* Center dark circle (creates ring appearance) */}
-          <circle cx={CX} cy={CY} r={R - TRACK_W / 2 - 2} fill="#0c0c1a"/>
+          {/* Pivot dot at center */}
+          <circle cx={CX} cy={CY} r={8}
+            fill="rgba(30,30,60,0.95)" stroke="rgba(255,255,255,0.15)" strokeWidth={1}/>
+          <circle cx={CX} cy={CY} r={4}
+            fill={running ? tuneColor : 'rgba(255,255,255,0.5)'}/>
 
           {/* Center content */}
           {running && note ? (
             <>
-              <text x={CX} y={CY - 10} textAnchor="middle" fill={tuneColor}
-                fontSize="52" fontWeight="900" fontFamily="Sora, system-ui">
+              <text x={CX} y={CY - 12} textAnchor="middle" fill={tuneColor}
+                fontSize="48" fontWeight="900" fontFamily="Sora, system-ui">
                 {note}
               </text>
-              <text x={CX} y={CY + 24} textAnchor="middle" fill="rgba(255,255,255,0.5)"
-                fontSize="16" fontFamily="Sora, system-ui">
+              <text x={CX} y={CY + 20} textAnchor="middle" fill="rgba(255,255,255,0.45)"
+                fontSize="14" fontFamily="Sora, system-ui">
                 {freq} Hz
               </text>
-              <text x={CX} y={CY + 46} textAnchor="middle"
-                fill={Math.abs(cents) <= 5 ? '#4ade80' : 'rgba(255,255,255,0.3)'}
-                fontSize="13" fontFamily="Sora, system-ui">
-                {Math.abs(cents) <= 5 ? '✓ In Tune' : cents > 0 ? `+${cents}¢` : `${cents}¢`}
+              <text x={CX} y={CY + 40} textAnchor="middle"
+                fill={Math.abs(cents) <= 5 ? '#4ade80' : tuneColor}
+                fontSize="13" fontWeight="700" fontFamily="Sora, system-ui">
+                {Math.abs(cents) <= 5
+                  ? '✓ In Tune'
+                  : cents > 0
+                    ? `+${cents}¢  tune down`
+                    : `${cents}¢  tune up`}
               </text>
             </>
           ) : (
