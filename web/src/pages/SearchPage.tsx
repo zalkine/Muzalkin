@@ -31,16 +31,22 @@ function saveRecent(q: string) {
   localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...prev].slice(0, MAX_RECENT)));
 }
 
-// Mock "quick access" songs shown on idle
-const QUICK_SONGS: Song[] = [
-  { id: 'q1', title: 'Wonderwall',           artist: 'Oasis',       source: 'ultimate-guitar', difficulty: 'Beginner' },
-  { id: 'q2', title: 'Let It Be',            artist: 'The Beatles', source: 'ultimate-guitar', difficulty: 'Beginner' },
-  { id: 'q3', title: 'Hotel California',     artist: 'Eagles',      source: 'ultimate-guitar', difficulty: 'Intermediate' },
-  { id: 'q4', title: 'ירושלים של זהב',       artist: 'נעמי שמר',    source: 'tab4u',           difficulty: 'Intermediate' },
-];
+const RECENT_SONGS_KEY = 'muzalkin_recent_songs';
+const MAX_RECENT_SONGS = 5;
+
+type RecentSong = { id: string; title: string; artist: string; source: string };
+
+function loadRecentSongs(): RecentSong[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_SONGS_KEY) ?? '[]'); } catch { return []; }
+}
+function pushRecentSong(song: RecentSong) {
+  const prev = loadRecentSongs().filter(s => s.id !== song.id);
+  localStorage.setItem(RECENT_SONGS_KEY, JSON.stringify([song, ...prev].slice(0, MAX_RECENT_SONGS)));
+}
 
 function toSong(r: SearchResult, idx: number): Song {
-  return { id: r.id ?? r.source_url ?? `r${idx}`, title: r.song_title, artist: r.artist, source: r.source };
+  // Never put source_url in id — it breaks navigation. Use UUID if present, else index key.
+  return { id: r.id ?? `r${idx}`, title: r.song_title, artist: r.artist, source: r.source };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -49,12 +55,13 @@ export default function SearchPage() {
   const session   = useSession();
   const jam       = useJam();
 
-  const [query,      setQuery]      = useState('');
-  const [results,    setResults]    = useState<SearchResult[]>([]);
-  const [status,     setStatus]     = useState<Status>('idle');
-  const [fetchingId, setFetchingId] = useState<string | null>(null);
-  const [searchLang, setSearchLang] = useState<'he' | 'en'>('he');
-  const [recent,     setRecent]     = useState<string[]>(() => loadRecent());
+  const [query,       setQuery]       = useState('');
+  const [results,     setResults]     = useState<SearchResult[]>([]);
+  const [status,      setStatus]      = useState<Status>('idle');
+  const [fetchingId,  setFetchingId]  = useState<string | null>(null);
+  const [searchLang,  setSearchLang]  = useState<'he' | 'en'>('he');
+  const [recent,      setRecent]      = useState<string[]>(() => loadRecent());
+  const [recentSongs, setRecentSongs] = useState<RecentSong[]>(() => loadRecentSongs());
 
   useEffect(() => { setRecent(loadRecent()); }, []);
 
@@ -92,12 +99,21 @@ export default function SearchPage() {
 
   // ── Song selection ─────────────────────────────────────────────────────────
   const handleSelect = useCallback(async (song: Song) => {
-    if (song.id && !song.id.startsWith('q') && !song.id.startsWith('r')) {
-      saveLastPlayed({ title: song.title, artist: song.artist, id: song.id });
-      navigate(`/song/${song.id}`); return;
-    }
+    // Find the original SearchResult by matching the UUID or the r{idx} key
     const item = results.find((r, i) => r.id === song.id || `r${i}` === song.id);
-    if (!item?.source_url) return;
+    if (!item) return;
+
+    // Cache hit — item already has a UUID, navigate straight to the song page
+    if (item.id) {
+      saveLastPlayed({ title: item.song_title, artist: item.artist, id: item.id });
+      pushRecentSong({ id: item.id, title: item.song_title, artist: item.artist, source: item.source });
+      setRecentSongs(loadRecentSongs());
+      navigate(`/song/${item.id}`);
+      return;
+    }
+
+    // Scraper result — must fetch & cache the chords first
+    if (!item.source_url) return;
     setFetchingId(song.id);
     try {
       const resp = await fetch(`${BACKEND_URL}/api/chords/fetch`, {
@@ -107,13 +123,17 @@ export default function SearchPage() {
       });
       if (!resp.ok) throw new Error(`${resp.status}`);
       const row = await resp.json();
-      saveLastPlayed({ title: item.song_title, artist: item.artist, id: row.id });
-      navigate(row.id ? `/song/${row.id}` : '/song/_preview', { state: { song: row } });
-    } catch { alert('Failed to load chords'); }
+      const finalId = row.id ?? undefined;
+      saveLastPlayed({ title: item.song_title, artist: item.artist, id: finalId });
+      if (finalId) {
+        pushRecentSong({ id: finalId, title: item.song_title, artist: item.artist, source: item.source });
+        setRecentSongs(loadRecentSongs());
+      }
+      navigate(finalId ? `/song/${finalId}` : '/song/_preview', { state: { song: row } });
+    } catch { alert('Failed to load chords. Check that the backend is running.'); }
     finally { setFetchingId(null); }
   }, [navigate, results, searchLang]);
 
-  const handleQuickSelect = useCallback((song: Song) => runSearch(song.title), [runSearch]);
   const clearRecent = () => { localStorage.removeItem(RECENT_KEY); setRecent([]); };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -231,27 +251,34 @@ export default function SearchPage() {
       {/* ── CONTENT ────────────────────────────────────────────────────────── */}
       <div style={{ padding: '20px 20px 40px' }}>
 
-        {/* Idle: Quick Actions / recent songs */}
+        {/* Idle: recently-opened songs OR empty prompt */}
         {status === 'idle' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#fff' }}>Quick Actions</h2>
-              {recent.length > 0 && (
-                <button onClick={clearRecent} style={{
-                  background: 'none', border: 'none', color: '#5B8DFF',
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-                }}>
-                  Clear <span style={{ fontSize: 11 }}>›</span>
-                </button>
-              )}
+          recentSongs.length > 0 ? (
+            <>
+              <h2 style={{ margin: '0 0 14px', fontSize: 18, fontWeight: 800, color: '#fff' }}>Recently Played</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {recentSongs.map((song, i) => (
+                  <SongCard
+                    key={song.id}
+                    song={{ id: song.id, title: song.title, artist: song.artist, source: song.source }}
+                    index={i}
+                    onSelect={s => { saveLastPlayed({ title: s.title, artist: s.artist, id: s.id }); navigate(`/song/${s.id}`); }}
+                    showQueueBtn={jamSession.active}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', paddingTop: 48 }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🎸</div>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, margin: 0, fontWeight: 600 }}>
+                Search for a song above
+              </p>
+              <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 13, margin: '8px 0 0' }}>
+                Hebrew &amp; English songs · Guitar &amp; Piano
+              </p>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {QUICK_SONGS.map((song, i) => (
-                <SongCard key={song.id} song={song} index={i} onSelect={handleQuickSelect}
-                  showQueueBtn={jamSession.active} />
-              ))}
-            </div>
-          </>
+          )
         )}
 
         {/* Loading */}
