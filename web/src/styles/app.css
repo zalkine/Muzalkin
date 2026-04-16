@@ -53,12 +53,51 @@ button { cursor: pointer; font-family: inherit; }
 input  { font-family: inherit; }
 a      { color: inherit; text-decoration: none; }
 
-/* ── Mobile viewport fix ─────────────────────────────────────────────── */
+/* ── Mobile: fill entire viewport ────────────────────────────────────── */
 .app-root {
   display: flex;
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+}
+
+/* ── Desktop: phone-frame centered layout ────────────────────────────── */
+@media (min-width: 600px) {
+  html, body {
+    height: 100%;
+    background:
+      radial-gradient(ellipse at 25% 50%, rgba(91,141,255,0.12) 0%, transparent 55%),
+      radial-gradient(ellipse at 75% 30%, rgba(160,64,255,0.10) 0%, transparent 55%),
+      #06060f;
+  }
+
+  #root {
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-root {
+    width: 430px;
+    height: min(860px, calc(100vh - 32px));
+    height: min(860px, calc(100dvh - 32px));
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.07),
+      0 40px 100px rgba(0,0,0,0.8),
+      0 0 80px rgba(91,141,255,0.18),
+      0 0 160px rgba(160,64,255,0.10);
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-root {
+    height: min(900px, calc(100vh - 48px));
+    height: min(900px, calc(100dvh - 48px));
+  }
 }
 
 /* ── Animations ──────────────────────────────────────────────────────── */
