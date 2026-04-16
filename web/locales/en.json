@@ -82,5 +82,12 @@
   "jam_not_found": "Jam code not found",
   "jam_share_title": "Share Jam",
   "jam_share_text": "Join my MuZalkin jam! Code: {{code}}",
-  "tagline": "Enjoy playing with MuZalkin"
+  "tagline": "Enjoy playing with MuZalkin",
+  "tuner_nav": "Tuner",
+  "tuner_title": "Guitar Tuner",
+  "results_found": "results",
+  "trending_title": "Trending Now",
+  "continue_playing": "Continue Playing",
+  "your_playlists": "Your Playlists",
+  "see_all": "See all"
 }

@@ -14,6 +14,7 @@ import LoginPage           from './pages/LoginPage';
 import JoinJamPage         from './pages/JoinJamPage';
 import NavBar              from './components/NavBar';
 import JamBanner           from './components/JamBanner';
+import BottomNav           from './components/dashboard/BottomNav';
 
 import './styles/app.css';
 
@@ -41,7 +42,7 @@ function AppShell() {
           <Route path="*"              element={<WelcomePage />} />
         </Routes>
       </div>
-      {showNav && <NavBar />}
+      {showNav && <BottomNav />}
     </div>
   );
 }

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ── Theme variables (dark by default — music feel) ──────────────────── */
 :root {
   --bg:           #0c0c1a;

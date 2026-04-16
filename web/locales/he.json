@@ -82,5 +82,12 @@
   "jam_not_found": "קוד ג'אם לא נמצא",
   "jam_share_title": "שתף ג'אם",
   "jam_share_text": "הצטרף לג'אם שלי במוזלקין! קוד: {{code}}",
-  "tagline": "תיהנו לנגן עם MuZalkin"
+  "tagline": "תיהנו לנגן עם MuZalkin",
+  "tuner_nav": "כוונן",
+  "tuner_title": "כוונן גיטרה",
+  "results_found": "תוצאות",
+  "trending_title": "פופולרי עכשיו",
+  "continue_playing": "המשך לנגן",
+  "your_playlists": "הפלייליסטים שלך",
+  "see_all": "הצג הכל"
 }
