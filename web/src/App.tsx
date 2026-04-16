@@ -35,9 +35,12 @@ function AppShell() {
         <WelcomePage />
       ) : isSwipeable ? (
         /* ── 3-panel swipeable layout (Search / Tile / Tuner) ─────────── */
-        /* key="swipe" keeps the component mounted when navigating between
-           the 3 swipeable routes, so scroll positions are preserved.      */
-        <SwipeableMain key="swipe" />
+        /* Wrapper must be flex:1 so SwipeableMain fills the remaining      *
+         * height after JamBanner. key="swipe" prevents remounting when    *
+         * navigating between the 3 swipeable routes.                      */
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <SwipeableMain key="swipe" />
+        </div>
       ) : (
         /* ── Regular routed pages ─────────────────────────────────────── */
         <>

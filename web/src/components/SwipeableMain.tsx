@@ -46,10 +46,10 @@ export default function SwipeableMain() {
   const onTuner = idx === 2;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {/* 3-panel swipeable track */}
       <div
-        style={{ flex: 1, overflow: 'hidden', position: 'relative' }}
+        style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -58,7 +58,7 @@ export default function SwipeableMain() {
           display: 'flex',
           width: '300%',
           height: '100%',
-          transform: `translateX(calc(${-idx * 100 / 3}% + ${dragX / 3}px))`,
+          transform: `translateX(calc(${-idx * 100 / 3}% + ${dragX}px))`,
           transition: dragging ? 'none' : 'transform 0.38s cubic-bezier(0.25,0.46,0.45,0.94)',
           willChange: 'transform',
         }}>
