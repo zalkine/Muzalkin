@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '../lib/SessionContext';
 import { useJam } from '../lib/jamContext';
 
-import Header from '../components/dashboard/Header';
 import JamStatusCard from '../components/dashboard/JamStatusCard';
-import SearchBar from '../components/dashboard/SearchBar';
-import RecentSearchChips from '../components/dashboard/RecentSearchChips';
-import QuickActionsRow from '../components/dashboard/QuickActionsRow';
-import Section, { SectionSkeleton } from '../components/dashboard/Section';
 import SongCard, { SongCardSkeleton } from '../components/dashboard/SongCard';
 import type { Song, User, JamSession } from '../components/dashboard/types';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
 type SearchResult = {
   id?: string;
   song_title: string;
@@ -23,57 +16,38 @@ type SearchResult = {
   source_url?: string;
   language?: string;
 };
-
 type Status = 'idle' | 'loading' | 'done' | 'error';
-
-// ── Constants ──────────────────────────────────────────────────────────────────
 
 const BACKEND_URL = '';
 const RECENT_KEY  = 'muzalkin_recent_searches';
 const MAX_RECENT  = 8;
 
-// ── Trending mock data (replaced by real API in production) ───────────────────
-
-const TRENDING_SONGS: Song[] = [
-  { id: 'mock-1', title: 'Hotel California',      artist: 'Eagles',          source: 'ultimate-guitar', difficulty: 'Intermediate' },
-  { id: 'mock-2', title: 'Wonderwall',             artist: 'Oasis',           source: 'ultimate-guitar', difficulty: 'Beginner' },
-  { id: 'mock-3', title: 'Knockin\' on Heaven\'s Door', artist: 'Bob Dylan', source: 'ultimate-guitar', difficulty: 'Beginner' },
-  { id: 'mock-4', title: 'ירושלים של זהב',         artist: 'נעמי שמר',        source: 'tab4u',           difficulty: 'Intermediate' },
-  { id: 'mock-5', title: 'חלום בלהות',              artist: 'שלום חנוך',       source: 'tab4u',           difficulty: 'Advanced' },
-];
-
-// ── Local storage helpers ─────────────────────────────────────────────────────
-
 function loadRecent(): string[] {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'); } catch { return []; }
 }
-
-function saveRecent(query: string) {
-  const prev = loadRecent().filter(q => q !== query);
-  localStorage.setItem(RECENT_KEY, JSON.stringify([query, ...prev].slice(0, MAX_RECENT)));
+function saveRecent(q: string) {
+  const prev = loadRecent().filter(x => x !== q);
+  localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...prev].slice(0, MAX_RECENT)));
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// Mock "quick access" songs shown on idle
+const QUICK_SONGS: Song[] = [
+  { id: 'q1', title: 'Wonderwall',           artist: 'Oasis',       source: 'ultimate-guitar', difficulty: 'Beginner' },
+  { id: 'q2', title: 'Let It Be',            artist: 'The Beatles', source: 'ultimate-guitar', difficulty: 'Beginner' },
+  { id: 'q3', title: 'Hotel California',     artist: 'Eagles',      source: 'ultimate-guitar', difficulty: 'Intermediate' },
+  { id: 'q4', title: 'ירושלים של זהב',       artist: 'נעמי שמר',    source: 'tab4u',           difficulty: 'Intermediate' },
+];
 
 function toSong(r: SearchResult, idx: number): Song {
-  return {
-    id:     r.id ?? r.source_url ?? `res-${idx}`,
-    title:  r.song_title,
-    artist: r.artist,
-    source: r.source,
-  };
+  return { id: r.id ?? r.source_url ?? `r${idx}`, title: r.song_title, artist: r.artist, source: r.source };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-
 export default function SearchPage() {
-  const { t, i18n } = useTranslation();
-  const navigate    = useNavigate();
-  const session     = useSession();
-  const jam         = useJam();
-  const isRTL       = i18n.language === 'he';
+  const navigate  = useNavigate();
+  const session   = useSession();
+  const jam       = useJam();
 
-  // ── State ──────────────────────────────────────────────────────────────────
   const [query,      setQuery]      = useState('');
   const [results,    setResults]    = useState<SearchResult[]>([]);
   const [status,     setStatus]     = useState<Status>('idle');
@@ -81,25 +55,16 @@ export default function SearchPage() {
   const [searchLang, setSearchLang] = useState<'he' | 'en'>('he');
   const [recent,     setRecent]     = useState<string[]>(() => loadRecent());
 
-  // Sync recent on focus
   useEffect(() => { setRecent(loadRecent()); }, []);
 
-  // ── User info ──────────────────────────────────────────────────────────────
-  const user: User | null = session
-    ? {
-        firstName:       session.user.user_metadata?.full_name?.split(' ')[0]
-                      ?? session.user.email?.split('@')[0]
-                      ?? 'Friend',
-        isAuthenticated: true,
-      }
-    : null;
+  const user: User | null = session ? {
+    firstName: session.user.user_metadata?.full_name?.split(' ')[0] ?? session.user.email?.split('@')[0] ?? 'Friend',
+    isAuthenticated: true,
+  } : null;
 
-  // ── Jam session derived state ──────────────────────────────────────────────
   const jamSession: JamSession = {
-    active:       !!jam.sessionCode,
-    code:         jam.sessionCode ?? '',
-    currentSong:  '',           // not tracked in basic context
-    participants: jam.participantCount,
+    active: !!jam.sessionCode, code: jam.sessionCode ?? '',
+    currentSong: '', participants: jam.participantCount,
   };
 
   // ── Search ─────────────────────────────────────────────────────────────────
@@ -109,195 +74,231 @@ export default function SearchPage() {
     setQuery(trimmed);
     setStatus('loading');
     setResults([]);
-
     try {
       const lang = /[\u0590-\u05FF]/.test(trimmed) ? 'he' : 'en';
       setSearchLang(lang);
-      const url  = `${BACKEND_URL}/api/chords/search?q=${encodeURIComponent(trimmed)}&lang=${lang}`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Backend ${resp.status}`);
+      const resp = await fetch(`${BACKEND_URL}/api/chords/search?q=${encodeURIComponent(trimmed)}&lang=${lang}`);
+      if (!resp.ok) throw new Error(`${resp.status}`);
       const data: SearchResult[] = await resp.json();
       setResults(data);
       setStatus('done');
       saveRecent(trimmed);
       setRecent(loadRecent());
-    } catch {
-      setStatus('error');
-    }
+    } catch { setStatus('error'); }
   }, []);
 
   const handleSearch = useCallback(() => runSearch(query), [query, runSearch]);
 
   // ── Song selection ─────────────────────────────────────────────────────────
   const handleSelect = useCallback(async (song: Song) => {
-    // Songs with real UUIDs navigate directly
-    if (song.id && !song.id.startsWith('mock-') && !song.id.startsWith('res-')) {
-      navigate(`/song/${song.id}`);
-      return;
+    if (song.id && !song.id.startsWith('q') && !song.id.startsWith('r')) {
+      navigate(`/song/${song.id}`); return;
     }
-    // Find original result to get source_url
-    const item = results.find(r =>
-      r.id === song.id ||
-      r.source_url === song.id ||
-      (`res-${results.indexOf(r)}` === song.id)
-    );
+    const item = results.find((r, i) => r.id === song.id || `r${i}` === song.id);
     if (!item?.source_url) return;
-
     setFetchingId(song.id);
     try {
-      const lang = item.language ?? searchLang;
       const resp = await fetch(`${BACKEND_URL}/api/chords/fetch`, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url:    item.source_url,
-          title:  item.song_title,
-          artist: item.artist,
-          source: item.source,
-          lang,
-        }),
+        body: JSON.stringify({ url: item.source_url, title: item.song_title, artist: item.artist, source: item.source, lang: item.language ?? searchLang }),
       });
-      if (!resp.ok) throw new Error(`Fetch failed ${resp.status}`);
+      if (!resp.ok) throw new Error(`${resp.status}`);
       const row = await resp.json();
-      if (row.id) {
-        navigate(`/song/${row.id}`);
-      } else {
-        navigate('/song/_preview', { state: { song: row } });
-      }
-    } catch {
-      alert(t('error_fetch'));
-    } finally {
-      setFetchingId(null);
-    }
-  }, [navigate, results, searchLang, t]);
+      navigate(row.id ? `/song/${row.id}` : '/song/_preview', { state: { song: row } });
+    } catch { alert('Failed to load chords'); }
+    finally { setFetchingId(null); }
+  }, [navigate, results, searchLang]);
 
-  // ── Trending song selection (mock) ─────────────────────────────────────────
-  const handleTrendingSelect = useCallback((song: Song) => {
-    // Run a search with the song title
-    runSearch(song.title);
-  }, [runSearch]);
-
-  // ── Add to queue ───────────────────────────────────────────────────────────
-  const handleAddToQueue = useCallback((song: Song) => {
-    // Basic jam context doesn't have addToQueue — alert for now
-    alert(`Added "${song.title}" to queue`);
-  }, []);
-
-  // ── Clear recent ───────────────────────────────────────────────────────────
-  const clearRecent = () => {
-    localStorage.removeItem(RECENT_KEY);
-    setRecent([]);
-  };
+  const handleQuickSelect = useCallback((song: Song) => runSearch(song.title), [runSearch]);
+  const clearRecent = () => { localStorage.removeItem(RECENT_KEY); setRecent([]); };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="flex flex-col"
-      style={{ background: 'var(--bg)', minHeight: '100%' }}
-      dir={isRTL ? 'rtl' : 'ltr'}
-    >
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <Header user={user} />
+    <div style={{ minHeight: '100%', background: '#0c0c1a' }}>
 
-      {/* ── Jam Status Card ────────────────────────────────────────────────── */}
+      {/* ── HERO ───────────────────────────────────────────────────────────── */}
+      <div style={{
+        position: 'relative',
+        height: 240,
+        overflow: 'hidden',
+        background: '#0c0c1a',
+      }}>
+        {/* Bokeh background */}
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: `
+            radial-gradient(ellipse at 70% 40%, rgba(220,80,180,0.45) 0%, transparent 40%),
+            radial-gradient(ellipse at 25% 55%, rgba(100,50,220,0.5) 0%, transparent 45%),
+            radial-gradient(ellipse at 85% 75%, rgba(60,30,180,0.3) 0%, transparent 35%),
+            radial-gradient(ellipse at 15% 20%, rgba(180,60,220,0.2) 0%, transparent 40%),
+            radial-gradient(ellipse at 50% 90%, rgba(40,0,100,0.7) 0%, transparent 50%),
+            #0c0c1a
+          `,
+        }} />
+
+        {/* Fade-to-content at bottom */}
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 100,
+          background: 'linear-gradient(to bottom, transparent, #0c0c1a)',
+        }} />
+
+        {/* Greeting — overlaid bottom-left */}
+        <div style={{ position: 'absolute', bottom: 28, left: 20 }}>
+          <h1 style={{ margin: 0, fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>
+            {user ? `Hi ${user.firstName} 👋` : 'Hi there 👋'}
+          </h1>
+          <p style={{ margin: '6px 0 0', fontSize: 17, color: 'rgba(255,255,255,0.55)', fontWeight: 400 }}>
+            What do you want to play today?
+          </p>
+        </div>
+      </div>
+
+      {/* ── SEARCH BAR ─────────────────────────────────────────────────────── */}
+      <div style={{ padding: '0 20px', marginTop: -12, position: 'relative', zIndex: 2 }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          background: 'rgba(255,255,255,0.07)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          borderRadius: 50, padding: '0 8px 0 20px', height: 54,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)',
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}>
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder="Search songs or artists..."
+            style={{ flex: 1, height: '100%', border: 'none', background: 'transparent', fontSize: 15, color: '#fff', outline: 'none' }}
+          />
+          {/* Mic */}
+          <button style={{
+            width: 38, height: 38, borderRadius: '50%', background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
+          {/* Guitar shortcut */}
+          <button
+            onClick={() => navigate('/tuner')}
+            style={{
+              width: 38, height: 38, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #5B8DFF, #A040FF)',
+              border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', flexShrink: 0, fontSize: 18,
+              boxShadow: '0 2px 12px rgba(91,141,255,0.5)',
+            }}
+          >
+            🎸
+          </button>
+        </div>
+      </div>
+
+      {/* ── JAM STATUS ─────────────────────────────────────────────────────── */}
       {jamSession.active && <JamStatusCard jam={jamSession} />}
 
-      {/* ── Search Bar ─────────────────────────────────────────────────────── */}
-      <SearchBar
-        value={query}
-        onChange={setQuery}
-        onSearch={handleSearch}
-        isLoading={status === 'loading'}
-      />
+      {/* ── RECENT CHIPS ───────────────────────────────────────────────────── */}
+      {status === 'idle' && recent.length > 0 && (
+        <div style={{ padding: '18px 20px 0' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {recent.map(q => (
+              <button key={q} onClick={() => runSearch(q)} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', borderRadius: 50,
+                border: '1px solid rgba(255,255,255,0.1)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: 13, cursor: 'pointer',
+                transition: 'border-color 0.2s, background 0.2s',
+              }}>
+                <span style={{ fontSize: 11 }}>🔍</span>
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
-      {/* ── Scrollable Content ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto pb-6">
+      {/* ── CONTENT ────────────────────────────────────────────────────────── */}
+      <div style={{ padding: '20px 20px 40px' }}>
 
-        {/* ── IDLE STATE ─────────────────────────────────────────────────── */}
+        {/* Idle: Quick Actions / recent songs */}
         {status === 'idle' && (
           <>
-            {/* Recent searches */}
-            <RecentSearchChips
-              searches={recent}
-              onSelect={runSearch}
-              onClear={clearRecent}
-            />
-
-            {/* Quick actions */}
-            <QuickActionsRow />
-
-            {/* Trending section */}
-            <Section emoji="🔥" title={t('trending_title') ?? 'Trending Now'} grid>
-              {TRENDING_SONGS.map((song, i) => (
-                <SongCard
-                  key={song.id}
-                  song={song}
-                  index={i}
-                  onSelect={handleTrendingSelect}
-                  showQueueBtn={jamSession.active}
-                  onAddToQueue={handleAddToQueue}
-                />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#fff' }}>Quick Actions</h2>
+              {recent.length > 0 && (
+                <button onClick={clearRecent} style={{
+                  background: 'none', border: 'none', color: '#5B8DFF',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  Clear <span style={{ fontSize: 11 }}>›</span>
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {QUICK_SONGS.map((song, i) => (
+                <SongCard key={song.id} song={song} index={i} onSelect={handleQuickSelect}
+                  showQueueBtn={jamSession.active} />
               ))}
-            </Section>
+            </div>
           </>
         )}
 
-        {/* ── LOADING ────────────────────────────────────────────────────── */}
+        {/* Loading */}
         {status === 'loading' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[0,1,2,3].map(i => <SongCardSkeleton key={i} />)}
+          </div>
+        )}
+
+        {/* Error */}
+        {status === 'error' && (
+          <div style={{ textAlign: 'center', paddingTop: 48 }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>⚠️</div>
+            <p style={{ color: '#f87171', fontSize: 15, margin: '0 0 16px' }}>Failed to load results</p>
+            <button onClick={handleSearch} style={{
+              background: 'rgba(91,141,255,0.2)', border: '1px solid rgba(91,141,255,0.4)',
+              color: '#5B8DFF', borderRadius: 50, padding: '10px 24px', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            }}>Retry</button>
+          </div>
+        )}
+
+        {/* No results */}
+        {status === 'done' && results.length === 0 && (
+          <div style={{ textAlign: 'center', paddingTop: 48 }}>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>🎵</div>
+            <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: 15 }}>No results found</p>
+          </div>
+        )}
+
+        {/* Results */}
+        {status === 'done' && results.length > 0 && (
           <>
-            <SectionSkeleton rows={2} />
-            <SectionSkeleton rows={3} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#fff' }}>Results</h2>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>
+                {results.length} found
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {results.map((item, idx) => {
+                const song = toSong(item, idx);
+                return (
+                  <SongCard key={song.id} song={song} index={idx} onSelect={handleSelect}
+                    isLoading={fetchingId === song.id}
+                    showQueueBtn={jamSession.active} />
+                );
+              })}
+            </div>
           </>
         )}
-
-        {/* ── ERROR ──────────────────────────────────────────────────────── */}
-        {status === 'error' && (
-          <div className="flex flex-col items-center justify-center gap-3 px-8 py-20 text-center">
-            <span className="text-4xl">⚠️</span>
-            <p className="text-sm text-red-400">{t('error_fetch')}</p>
-            <button
-              onClick={handleSearch}
-              className="rounded-full bg-accent/20 px-5 py-2 text-sm font-bold text-accent
-                         transition-all hover:bg-accent/30 active:scale-95"
-            >
-              {t('retry')}
-            </button>
-          </div>
-        )}
-
-        {/* ── NO RESULTS ─────────────────────────────────────────────────── */}
-        {status === 'done' && results.length === 0 && (
-          <div className="flex flex-col items-center justify-center gap-3 px-8 py-20 text-center">
-            <span className="text-4xl">🎵</span>
-            <p className="text-sm text-white/40">{t('no_results')}</p>
-          </div>
-        )}
-
-        {/* ── RESULTS ────────────────────────────────────────────────────── */}
-        {status === 'done' && results.length > 0 && (
-          <Section
-            emoji="🎵"
-            title={`${results.length} ${t('results_found') ?? 'results'}`}
-            grid
-          >
-            {results.map((item, idx) => {
-              const song    = toSong(item, idx);
-              const isBusy  = fetchingId === song.id;
-              return (
-                <SongCard
-                  key={song.id}
-                  song={song}
-                  index={idx}
-                  onSelect={handleSelect}
-                  isLoading={isBusy}
-                  showQueueBtn={jamSession.active}
-                  onAddToQueue={handleAddToQueue}
-                />
-              );
-            })}
-          </Section>
-        )}
-
       </div>
     </div>
   );
