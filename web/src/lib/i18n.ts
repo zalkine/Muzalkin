@@ -4,8 +4,8 @@ import { initReactI18next } from 'react-i18next';
 import en from '../../locales/en.json';
 import he from '../../locales/he.json';
 
-// Detect saved language from localStorage, default to Hebrew
-const savedLang = localStorage.getItem('muzalkin_lang') ?? 'he';
+// Detect saved language from localStorage, default to English
+const savedLang = localStorage.getItem('muzalkin_lang') ?? 'en';
 
 i18next.use(initReactI18next).init({
   lng: savedLang,
