@@ -6,8 +6,7 @@ export default function WelcomePage() {
   return (
     <div style={{
       position: 'relative',
-      height: '100vh',
-      height: '100dvh' as never,
+      height: '100dvh',
       width: '100%',
       overflow: 'hidden',
       display: 'flex',
