@@ -159,23 +159,22 @@ def fetch_tab4u(url: str) -> dict:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # Strip only ASCII whitespace (\r\n\t\x20), NOT \xa0.
-                # \xa0 (non-breaking space) is used by Tab4U to position each
-                # chord above its matching syllable — must be preserved.
-                text = cell.get_text(separator="").strip("\r\n\t ")
-                if text.strip():           # only append non-blank cells
-                    parts.append(text)
-            # Join cells, ensuring at least one \xa0 between adjacent chords
-            # when the preceding cell has no trailing non-breaking space.
-            # Without this, cells like "C" + "Am" → "CAm" instead of "C\xa0Am".
-            pieces = []
-            for idx, text in enumerate(parts):
-                if idx > 0 and not parts[idx - 1].endswith('\xa0'):
-                    pieces.append('\xa0')
-                pieces.append(text)
-            content = "".join(pieces)
+                # Use separator="" and keep \xa0 (\u00a0) intact.
+                # Tab4U pads chord cells with &nbsp; so that each chord's
+                # character position in the string matches the character
+                # position of the syllable it belongs to in the lyric below.
+                # Replacing \xa0 → ' ' or joining cells with "  " destroys
+                # that positional information.
+                # IMPORTANT: include ALL cells, even space/nbsp-only ones.
+                # Skipping empty cells removes the leading-space positional
+                # padding, causing chords to appear at the wrong syllable.
+                text = cell.get_text(separator="").rstrip()
+                parts.append(text)
+            # Join with no separator — the trailing \u00a0 padding inside each
+            # cell already encodes the gap to the next chord.
+            content = "".join(parts)
             if content.strip():
-                chords_data.append({"type": "chords", "content": content})
+                result.append({"type": "chords", "content": content})
             continue
 
         # ── Section header ─────────────────────────────────────────────────

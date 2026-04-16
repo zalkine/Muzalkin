@@ -79,8 +79,9 @@ export function parseChordLyricPair(
     segments.push({ chord: matches[i].chord, lyric });
   }
 
-  // Any lyric text before the first chord becomes its own chord-less segment
-  // so the first chord sits exactly above its own lyric text, not the prefix.
+  // Any lyric text before the first chord gets its own chord-less prefix segment.
+  // This keeps each chord label above its exact syllable (not shifted right by
+  // the merged prefix as happened when we prepended it to segments[0]).
   if (lyricPrefix) {
     segments.unshift({ chord: '', lyric: lyricPrefix });
   }
