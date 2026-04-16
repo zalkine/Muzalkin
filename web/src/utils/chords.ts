@@ -5,6 +5,27 @@ const CHORD_TOKEN_RE =
   /[A-G][#b]?(m(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+)*(?:\/[A-G][#b]?)?/g;
 
 /**
+ * Insert \xa0 between merged adjacent chord names before tokenisation.
+ * e.g. "CAm" → "C\xa0Am",  "AmFmaj7" → "Am\xa0Fmaj7",  "GbFm" → "Gb\xa0Fm"
+ *
+ * This must run on the raw chord LINE (not individual chord tokens) so that
+ * the RTL position math (lyricPos = L − 1 − start) uses a string where each
+ * chord is separated by at least one character.  Without this, two merged
+ * chords at positions 0 and 1 produce a 1-char-wide lyric slice, which
+ * breaks every Hebrew word into individual spaced-out letters.
+ */
+function separateMergedChords(s: string): string {
+  let prev = '';
+  let curr = s;
+  while (curr !== prev) {
+    prev = curr;
+    curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
+    curr = curr.replace(/([#b])([A-G])/g, '$1\u00a0$2');
+  }
+  return curr;
+}
+
+/**
  * Parse a chord line + lyric line into a segment-based ChordLineInline.
  *
  * LTR (English, Ultimate Guitar):
@@ -28,10 +49,16 @@ export function parseChordLyricPair(
   lyricLine: string,
   isRTL = false,
 ): ChordLineInline {
+  // Pre-process: ensure merged chord names (e.g. "CAm", "AmFmaj7") are
+  // separated by \xa0 before tokenisation.  Without this, adjacent chords at
+  // string positions 0 and 1 produce a 1-char-wide lyric slice, which splits
+  // Hebrew words into individual spaced-out letters.
+  const cl = separateMergedChords(chordLine);
+
   const matches: Array<{ chord: string; start: number }> = [];
   CHORD_TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = CHORD_TOKEN_RE.exec(chordLine)) !== null) {
+  while ((m = CHORD_TOKEN_RE.exec(cl)) !== null) {
     matches.push({ chord: m[0], start: m.index });
   }
 
@@ -40,7 +67,7 @@ export function parseChordLyricPair(
   }
 
   if (isRTL) {
-    const L = chordLine.length;
+    const L = cl.length;
     // Map each chord's string position P → lyric column Q = L−1−P,
     // then sort ascending by Q (rightmost lyric position first).
     const mapped = matches
@@ -79,9 +106,8 @@ export function parseChordLyricPair(
     segments.push({ chord: matches[i].chord, lyric });
   }
 
-  // Any lyric text before the first chord gets its own chord-less prefix segment.
-  // This keeps each chord label above its exact syllable (not shifted right by
-  // the merged prefix as happened when we prepended it to segments[0]).
+  // Any lyric text before the first chord becomes its own chord-less segment
+  // so the first chord sits exactly above its own lyric text, not the prefix.
   if (lyricPrefix) {
     segments.unshift({ chord: '', lyric: lyricPrefix });
   }
@@ -94,8 +120,22 @@ export function parseChordLyricPair(
  * segment-based 'line' entries for correct RTL/LTR chord placement.
  * Sections and standalone lyric lines are passed through unchanged.
  * Data already in 'line' format is also passed through unchanged.
+ *
+ * RTL (Hebrew/Tab4U): the chord strings use \xa0 characters to position each
+ * chord above its syllable assuming a fixed-width monospace cell — exactly how
+ * Tab4U renders them.  Converting to 'line' segments slices the Hebrew lyric
+ * at position-derived boundaries that split Hebrew words, causing "יל ד" gaps.
+ * Keep RTL data in legacy monospace mode so both rows share the same monospace
+ * font and the \xa0 alignment works as Tab4U intended.
  */
 export function normalizeChordData(data: ChordLine[], isRTL = false): ChordLine[] {
+  // Both RTL (Hebrew/Tab4U) and LTR (English/Cifraclub) use positional spacing:
+  // chords are placed at character positions that align with the lyric below.
+  // The inline segment conversion loses that spacing when chord positions extend
+  // beyond the lyric length, causing adjacent chords to appear merged ("Am7G").
+  // Keep legacy monospace format for all songs — spacing is always correct.
+  return data;
+
   const result: ChordLine[] = [];
   let i = 0;
 

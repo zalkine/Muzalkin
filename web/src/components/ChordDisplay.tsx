@@ -6,7 +6,7 @@ import { forwardRef } from 'react';
 
 /** Legacy format — separate chord/lyric lines */
 export type ChordLineSimple = {
-  type: 'chords' | 'lyrics' | 'section';
+  type: 'chords' | 'lyrics' | 'section' | 'tab';
   content: string;
 };
 
@@ -50,7 +50,8 @@ function splitMergedChords(s: string): string {
     curr = curr.replace(/([A-Za-z\d])([A-G])/g, '$1\u00a0$2');
     // Case 2: sharp/flat modifier immediately before a chord root
     //   "C#Am" → # before A → "C# Am"
-    curr = curr.replace(/([#])([A-G])/g, '$1\u00a0$2');
+    //   "GbFm" → b before F → "Gb Fm"
+    curr = curr.replace(/([#b])([A-G])/g, '$1\u00a0$2');
   }
   return curr;
 }
@@ -60,10 +61,11 @@ type Props = {
   data: ChordLine[];
   fontSize?: number;
   isRTL?: boolean;
+  showTabs?: boolean;
 };
 
 const ChordDisplay = forwardRef<HTMLDivElement, Props>(
-  ({ data, fontSize = 1, isRTL = false }, ref) => {
+  ({ data, fontSize = 1, isRTL = false, showTabs = false }, ref) => {
     return (
       <div
         ref={ref}
@@ -72,6 +74,7 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
           direction: isRTL ? 'rtl' : 'ltr',
           textAlign: isRTL ? 'right' : 'left',
           fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+          overflowX: 'auto',
         }}
       >
         {data.map((line, i) => {
@@ -155,30 +158,49 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
             // same font size — the only way &nbsp; widths match across rows.
             //
             // Exception: chords-only lines (no lyric below, e.g. intro) have
-            // no syllables to align against, so collapse runs of \u00a0 to a
-            // single space to avoid visually excessive gaps.
+            // no syllables to align against, so collapse runs of spaces/\u00a0
+            // to a single space to avoid visually excessive gaps.
+            // Tab4U uses \u00a0 for positioning; Cifraclub uses regular spaces.
             const chordContent = hasLyricBelow
               ? splitMergedChords(line.content)
-              : splitMergedChords(line.content).replace(/\u00a0+/g, ' ').trim();
-            const MONO = '"Courier New", Courier, monospace';
+              : splitMergedChords(line.content).replace(/[\u00a0 ]+/g, ' ').trim();
+            // LTR: ui-monospace → SF Mono (iOS), Cascadia/Consolas (Windows) — narrower
+            //   than Courier New; Courier New as last-resort fallback.
+            // RTL (Hebrew): Courier New MUST come first because SF Mono/Consolas have no
+            //   Hebrew glyphs. If Hebrew chars fell back to a proportional font the \xa0
+            //   spacing would no longer align chords to syllables. Courier New includes
+            //   Hebrew in its monospace cell grid on iOS, macOS, and Windows.
+            const MONO = isRTL
+              ? '"Courier New", Courier, monospace'
+              : 'ui-monospace, Consolas, "Courier New", monospace';
             const monoSize = Math.round(15 * fontSize);
+            // min(viewport-based, configured-size): on small screens the viewport term
+            // wins, preventing overflow regardless of A+ presses. On tablets/desktop the
+            // configured size wins. Both chord and lyric rows receive the same value, so
+            // the positional \xa0 / space alignment is always preserved.
+            const monoFontSize = `min(3.8vw, ${monoSize}px)`;
             return (
               <div
                 key={i}
                 style={{
-                  marginTop: Math.round(16 * fontSize),
+                  marginTop: Math.round((isRTL ? 16 : 8) * fontSize),
                   marginBottom: Math.round(2 * fontSize),
                 }}
               >
-                {/* Chord row — raw string, whiteSpace:pre preserves &nbsp; */}
+                {/* Chord row — raw string, whiteSpace:pre preserves &nbsp;
+                    RTL: direction:ltr + textAlign:right matches Tab4U's CSS exactly
+                    (Tab4U renders chord rows as direction:ltr / text-align:right so
+                    the last character of the chord string sits at the right edge,
+                    which aligns each chord above its correct Hebrew syllable). */}
                 <div style={{
                   fontFamily: MONO,
-                  fontSize: monoSize,
+                  fontSize: monoFontSize,
                   fontWeight: 700,
                   color: 'var(--chord-color)',
                   whiteSpace: 'pre',
-                  lineHeight: `${Math.round(monoSize * 1.4)}px`,
-                  direction: isRTL ? 'rtl' : 'ltr',
+                  lineHeight: 1.4,
+                  direction: 'ltr',
+                  textAlign: isRTL ? 'right' : 'left',
                 }}>
                   {chordContent}
                 </div>
@@ -186,10 +208,10 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 {hasLyricBelow && (
                   <div style={{
                     fontFamily: MONO,
-                    fontSize: monoSize,
+                    fontSize: monoFontSize,
                     color: 'var(--text)',
                     whiteSpace: 'pre',
-                    lineHeight: `${Math.round(monoSize * 1.55)}px`,
+                    lineHeight: 1.55,
                     direction: isRTL ? 'rtl' : 'ltr',
                   }}>
                     {nextLine.content}
@@ -205,8 +227,8 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
                 <div
                   key={i}
                   style={{
-                    marginTop: Math.round(28 * fontSize),
-                    marginBottom: Math.round(8 * fontSize),
+                    marginTop: Math.round((isRTL ? 28 : 14) * fontSize),
+                    marginBottom: Math.round((isRTL ? 8 : 4) * fontSize),
                     textAlign: isRTL ? 'right' : 'left',
                   }}
                 >
@@ -233,24 +255,50 @@ const ChordDisplay = forwardRef<HTMLDivElement, Props>(
               // Skip if already rendered above by the preceding 'chords' block
               const prevLine = data[i - 1];
               if (prevLine?.type === 'chords') return null;
-              const monoSize = Math.round(15 * fontSize);
+              // RTL: monospace (Courier New — Hebrew glyph support) so \xa0 alignment works.
+              // LTR: proportional font; proportional text wraps naturally, no overflow issue.
+              const isMonoLyric = isRTL;
+              const lyricSize = isMonoLyric ? Math.round(15 * fontSize) : Math.round(16 * fontSize);
+              // RTL monospace: same min(vw, px) cap as chord rows so lines stay on-screen.
+              const lyricFontSize = isMonoLyric ? `min(3.8vw, ${lyricSize}px)` : lyricSize;
               return (
                 <div key={i} style={{ marginBottom: Math.round(2 * fontSize) }}>
                   <span
                     style={{
-                      fontFamily: '"Courier New", Courier, monospace',
-                      fontSize: monoSize,
+                      fontFamily: isMonoLyric
+                        ? '"Courier New", Courier, monospace'
+                        : "'Segoe UI', system-ui, -apple-system, sans-serif",
+                      fontSize: lyricFontSize,
                       color: 'var(--text)',
-                      lineHeight: `${Math.round(monoSize * 1.55)}px`,
-                      whiteSpace: 'pre',
+                      lineHeight: 1.55,
+                      whiteSpace: isMonoLyric ? 'pre' : 'pre-wrap',
                       direction: isRTL ? 'rtl' : 'ltr',
+                    }}
+                  >
+                    {isMonoLyric ? line.content : line.content.trim()}
+                  </span>
+                </div>
+              );
+            }
+
+            case 'tab':
+              if (!showTabs) return null;
+              return (
+                <div key={i} style={{ marginBottom: Math.round(1 * fontSize) }}>
+                  <span
+                    style={{
+                      fontFamily: 'ui-monospace, Consolas, "Courier New", monospace',
+                      fontSize: Math.round(13 * fontSize),
+                      color: 'var(--text3)',
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre',
+                      direction: 'ltr',
                     }}
                   >
                     {line.content}
                   </span>
                 </div>
               );
-            }
 
             default:
               return null;

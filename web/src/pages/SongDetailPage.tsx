@@ -239,6 +239,7 @@ export default function SongDetailPage() {
   const [semitones, setSemitones] = useState(0);
   const [fontSize,  setFontSize]  = useState(1.2);
   const FONT_SIZES = [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.4];
+  const [showTabs,  setShowTabs]  = useState(false);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollOffset  = useRef(0);
@@ -302,15 +303,15 @@ export default function SongDetailPage() {
       });
   }, [id]);
 
+  useEffect(() => {
+    return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
+  }, []);
+
   // Save to NowPlayingBar whenever a song is successfully loaded
   useEffect(() => {
     if (!song) return;
     saveLastPlayed({ title: song.song_title, artist: song.artist, id: song.id });
   }, [song]);
-
-  useEffect(() => {
-    return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
-  }, []);
 
   // ---------------------------------------------------------------------------
   // Jam session: broadcast song identity when loaded (host), or follow host (viewer)
@@ -680,17 +681,15 @@ export default function SongDetailPage() {
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.max(-11, s - 1))}>
               {t('transpose_down')}
             </button>
-            <span style={{ fontSize: 13, fontWeight: 700, minWidth: 28, textAlign: 'center', color: 'var(--text)' }}>
-              {semitones > 0 ? `+${semitones}` : `${semitones}`}
-            </span>
+            <button
+              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap' }}
+              onClick={() => setSemitones(0)}
+            >
+              {semitones > 0 ? '+' : ''}{semitones / 2} {t('semitones')}
+            </button>
             <button style={toolBtnStyle} onClick={() => setSemitones(s => Math.min(11, s + 1))}>
               {t('transpose_up')}
             </button>
-            {semitones !== 0 && (
-              <button style={{ ...toolBtnStyle, borderColor: 'var(--border)', color: 'var(--text3)' }} onClick={() => setSemitones(0)}>
-                {t('transpose_reset')}
-              </button>
-            )}
           </div>
 
           {/* Scroll + share + playlist */}
@@ -709,6 +708,14 @@ export default function SongDetailPage() {
               {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
             </button>
             <button style={toolBtnStyle} onClick={handleShare}>{t('share')}</button>
+            {song?.chords_data?.some((l: { type: string }) => l.type === 'tab') && (
+              <button
+                style={{ ...toolBtnStyle, backgroundColor: showTabs ? 'var(--accent)' : 'var(--bg)', color: showTabs ? '#fff' : 'var(--accent)' }}
+                onClick={() => setShowTabs(v => !v)}
+              >
+                {showTabs ? 'Hide tabs' : 'Show tabs'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -767,7 +774,7 @@ export default function SongDetailPage() {
           </div>
         ) : (
           /* ── Normal chord sheet ── */
-          <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} />
+          <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} showTabs={showTabs} />
         )}
       </div>
 
