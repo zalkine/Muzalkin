@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 
 import { SessionProvider }  from './lib/SessionContext';
@@ -13,6 +14,8 @@ import LoginPage            from './pages/LoginPage';
 import JoinJamPage          from './pages/JoinJamPage';
 import SwipeableMain        from './components/SwipeableMain';
 import JamBanner            from './components/JamBanner';
+import JamQueueDrawer       from './components/JamQueueDrawer';
+import JamMemberList        from './components/JamMemberList';
 import BottomNav            from './components/dashboard/BottomNav';
 
 import './styles/app.css';
@@ -22,22 +25,29 @@ const SWIPE_PATHS = new Set(['/search', '/menu', '/tuner']);
 
 function AppShell() {
   const location = useLocation();
-  const isWelcome  = location.pathname === '/';
+  const isWelcome   = location.pathname === '/';
   const isSwipeable = SWIPE_PATHS.has(location.pathname);
+  const isRTL       = document.documentElement.dir === 'rtl';
+
+  const [isQueueOpen,   setIsQueueOpen]   = useState(false);
+  const [isMembersOpen, setIsMembersOpen] = useState(false);
 
   return (
     <div className="app-root">
       {/* Jam banner only on non-welcome pages */}
-      {!isWelcome && <JamBanner />}
+      {!isWelcome && (
+        <JamBanner
+          onOpenQueue={() => setIsQueueOpen(true)}
+          onOpenMembers={() => setIsMembersOpen(true)}
+          onLeft={() => { setIsQueueOpen(false); setIsMembersOpen(false); }}
+        />
+      )}
 
       {isWelcome ? (
         /* ── Landing page ─────────────────────────────────────────────── */
         <WelcomePage />
       ) : isSwipeable ? (
         /* ── 3-panel swipeable layout (Search / Tile / Tuner) ─────────── */
-        /* Wrapper must be flex:1 so SwipeableMain fills the remaining      *
-         * height after JamBanner. key="swipe" prevents remounting when    *
-         * navigating between the 3 swipeable routes.                      */
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <SwipeableMain key="swipe" />
         </div>
@@ -54,12 +64,24 @@ function AppShell() {
               <Route path="/jam/:code"     element={<JoinJamPage />} />
               <Route path="/jam"           element={<JoinJamPage />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="*"              element={<WelcomePage />} />
+              <Route path="*"             element={<WelcomePage />} />
             </Routes>
           </div>
           <BottomNav />
         </>
       )}
+
+      {/* Jam overlays — rendered outside the scroll area so they float above everything */}
+      <JamQueueDrawer
+        isOpen={isQueueOpen}
+        onClose={() => setIsQueueOpen(false)}
+        isRTL={isRTL}
+      />
+      <JamMemberList
+        isOpen={isMembersOpen}
+        onClose={() => setIsMembersOpen(false)}
+        isRTL={isRTL}
+      />
     </div>
   );
 }
