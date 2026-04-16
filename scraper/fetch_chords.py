@@ -159,22 +159,23 @@ def fetch_tab4u(url: str) -> dict:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # Use separator="" and keep \xa0 (\u00a0) intact.
-                # Tab4U pads chord cells with &nbsp; so that each chord's
-                # character position in the string matches the character
-                # position of the syllable it belongs to in the lyric below.
-                # Replacing \xa0 → ' ' or joining cells with "  " destroys
-                # that positional information.
-                # IMPORTANT: include ALL cells, even space/nbsp-only ones.
-                # Skipping empty cells removes the leading-space positional
-                # padding, causing chords to appear at the wrong syllable.
-                text = cell.get_text(separator="").rstrip()
-                parts.append(text)
-            # Join with no separator — the trailing \u00a0 padding inside each
-            # cell already encodes the gap to the next chord.
-            content = "".join(parts)
+                # Strip only ASCII whitespace (\r\n\t\x20), NOT \xa0.
+                # \xa0 (non-breaking space) is used by Tab4U to position each
+                # chord above its matching syllable — must be preserved.
+                text = cell.get_text(separator="").strip("\r\n\t ")
+                if text.strip():           # only append non-blank cells
+                    parts.append(text)
+            # Join cells, ensuring at least one \xa0 between adjacent chords
+            # when the preceding cell has no trailing non-breaking space.
+            # Without this, cells like "C" + "Am" → "CAm" instead of "C\xa0Am".
+            pieces = []
+            for idx, text in enumerate(parts):
+                if idx > 0 and not parts[idx - 1].endswith('\xa0'):
+                    pieces.append('\xa0')
+                pieces.append(text)
+            content = "".join(pieces)
             if content.strip():
-                result.append({"type": "chords", "content": content})
+                chords_data.append({"type": "chords", "content": content})
             continue
 
         # ── Section header ─────────────────────────────────────────────────
@@ -331,6 +332,200 @@ def _parse_ug_content(content: str) -> list:
 
 
 # ---------------------------------------------------------------------------
+# Cifraclub chord page parser
+# ---------------------------------------------------------------------------
+
+# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, C7M, GM, etc.
+_CHORD_WORD_RE = re.compile(
+    r'^[A-G][#b]?'
+    r'(?:m(?:aj\d*)?|M(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+M?)*'
+    r'(?:\([^)]*\))?'        # optional (4), (9), etc.
+    r'(?:/[A-G][#b]?)?$'
+)
+
+# Guitar tab line: starts with a string name (E B G D A e) followed by |
+_TAB_LINE_RE = re.compile(r'^[EBGDAe]\s*\|')
+
+
+def _is_chord_line(line: str) -> bool:
+    """Return True if every space-separated token on the line is a chord name."""
+    words = line.split()
+    return bool(words) and all(_CHORD_WORD_RE.match(w) for w in words)
+
+
+# Map common Spanish/Portuguese section names to English
+_SECTION_MAP = [
+    (re.compile(r'^dedilhado\b',          re.I), 'Fingerpicking'),
+    (re.compile(r'^pré-refrão\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pre-refrão\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pré-chorus\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^pre-chorus\b',         re.I), 'Pre-Chorus'),
+    (re.compile(r'^refrão\b',             re.I), 'Chorus'),
+    (re.compile(r'^estribillo\b',         re.I), 'Chorus'),
+    (re.compile(r'^coro\b',               re.I), 'Chorus'),
+    (re.compile(r'^verso\b',              re.I), 'Verse'),
+    (re.compile(r'^ponte\b',              re.I), 'Bridge'),
+    (re.compile(r'^puente\b',             re.I), 'Bridge'),
+    (re.compile(r'^interlúdio\b',         re.I), 'Interlude'),
+    (re.compile(r'^interludio\b',         re.I), 'Interlude'),
+    (re.compile(r'^first\s+part\b',       re.I), 'Verse 1'),
+    (re.compile(r'^second\s+part\b',      re.I), 'Verse 2'),
+    (re.compile(r'^third\s+part\b',       re.I), 'Verse 3'),
+    (re.compile(r'^fourth\s+part\b',      re.I), 'Verse 4'),
+]
+
+
+def _translate_section(name: str) -> str:
+    for pattern, english in _SECTION_MAP:
+        if pattern.match(name):
+            return english
+    return name.capitalize()
+
+
+def _parse_cifraclub_content(content: str) -> list:
+    """
+    Parse Cifraclub pre-tag content (positional chord-above-lyric format).
+
+    Em7           G          ← chord line (chord names + spaces for alignment)
+        Today is gonna       ← lyric line (leading spaces preserved for position)
+    [Chorus]                 ← section header
+    E|-0--3--...             ← guitar tab line  (type: 'tab')
+    """
+    result = []
+
+    for raw_line in content.splitlines():
+        line = raw_line.rstrip()
+
+        # Section header: [Verse 1], [Chorus], [Bridge], etc.
+        sec = re.match(r'^\[([^\]]+)\]', line)
+        if sec:
+            section_text = _translate_section(sec.group(1).strip())
+            result.append({"type": "section", "content": section_text})
+            rest = line[sec.end():].strip()
+            if rest:
+                if _is_chord_line(rest):
+                    result.append({"type": "chords", "content": rest})
+                else:
+                    result.append({"type": "lyrics", "content": rest})
+            continue
+
+        if not line.strip():
+            continue
+
+        # Guitar tab line: E|-0--3--  B|-1--3-- etc.
+        if _TAB_LINE_RE.match(line.strip()):
+            result.append({"type": "tab", "content": line})
+            continue
+
+        if _is_chord_line(line):
+            # Preserve full line (with spacing) so positions align with lyric below
+            result.append({"type": "chords", "content": line})
+        else:
+            result.append({"type": "lyrics", "content": line})
+
+    # Post-process: single lyrics lines that appear within a tab block are
+    # technique instructions (e.g. "Parte 2 de 3"), not song lyrics.
+    # Rule: mark a lyrics line as tab if a tab line appears within 5 lines after it
+    # AND no other lyrics line appears in between (i.e. it's an isolated instruction).
+    for i in range(len(result)):
+        if result[i]['type'] != 'lyrics':
+            continue
+        tab_nearby = False
+        other_lyric_before_tab = False
+        for j in range(i + 1, min(len(result), i + 6)):
+            t = result[j]['type']
+            if t == 'tab':
+                tab_nearby = True
+                break
+            if t == 'lyrics':
+                other_lyric_before_tab = True
+                break
+        if tab_nearby and not other_lyric_before_tab:
+            result[i] = {'type': 'tab', 'content': result[i]['content']}
+
+    # Strip common leading whitespace from chord+lyric pairs to remove
+    # cifraclub page-level indentation while preserving positional alignment.
+    # For standalone chord-only lines, strip all leading whitespace.
+    i = 0
+    while i < len(result):
+        if result[i]['type'] == 'chords':
+            chord_content = result[i]['content']
+            if i + 1 < len(result) and result[i + 1]['type'] == 'lyrics':
+                lyric_content = result[i + 1]['content']
+                chord_indent = len(chord_content) - len(chord_content.lstrip(' '))
+                lyric_indent = len(lyric_content) - len(lyric_content.lstrip(' '))
+                strip_n = min(chord_indent, lyric_indent)
+                if strip_n > 0:
+                    result[i]     = {'type': 'chords', 'content': chord_content[strip_n:]}
+                    result[i + 1] = {'type': 'lyrics', 'content': lyric_content[strip_n:]}
+                i += 2
+            else:
+                result[i] = {'type': 'chords', 'content': chord_content.lstrip()}
+                i += 1
+        else:
+            i += 1
+
+    return result
+
+
+def fetch_cifraclub(url: str) -> dict:
+    """
+    Fetch and parse a Cifraclub chord page.
+
+    Returns { title, artist, language, source, chords_data } or {} on failure.
+    Chord content is in <pre id="js-cifra-content"> as positional plain text.
+    """
+    scraper = make_scraper()
+    print(f"[fetch_cifraclub] fetching: {url}", file=sys.stderr)
+
+    try:
+        res = scraper.get(url, timeout=20)
+    except Exception as e:
+        print(f"[fetch_cifraclub] request error: {e}", file=sys.stderr)
+        return {}
+
+    if res.status_code != 200:
+        print(f"[fetch_cifraclub] HTTP {res.status_code}", file=sys.stderr)
+        return {}
+
+    soup = BeautifulSoup(res.text, "html.parser")
+
+    # Title and artist from og:title  →  "Song - Artist - CHORDS"
+    title, artist = "", ""
+    og = soup.find("meta", property="og:title")
+    if og:
+        raw = og.get("content", "")
+        parts = [p.strip() for p in raw.split(" - ")]
+        # Drop trailing "CHORDS" / "Tabs" suffix
+        parts = [p for p in parts if p.upper() not in ("CHORDS", "TABS", "CIFRA", "ACORDES")]
+        if len(parts) >= 2:
+            title, artist = parts[0], parts[1]
+        elif parts:
+            title = parts[0]
+
+    pre = soup.find("pre", id="js-cifra-content") or soup.find("pre")
+    if not pre:
+        print("[fetch_cifraclub] chord pre not found", file=sys.stderr)
+        return {}
+
+    chords_data = _parse_cifraclub_content(pre.get_text())
+
+    if not chords_data:
+        return {}
+
+    print(f"[fetch_cifraclub] parsed {len(chords_data)} lines, title='{title}', artist='{artist}'",
+          file=sys.stderr)
+
+    return {
+        "title":       title,
+        "artist":      artist,
+        "language":    _detect_language(chords_data),
+        "source":      "cifraclub",
+        "chords_data": chords_data,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -346,6 +541,8 @@ if __name__ == "__main__":
         out = fetch_tab4u(url)
     elif source in ("ultimate_guitar", "ug"):
         out = fetch_ultimate_guitar(url)
+    elif source == "cifraclub":
+        out = fetch_cifraclub(url)
     else:
         print(f"[fetch_chords] Unknown source: {source}", file=sys.stderr)
         sys.exit(1)

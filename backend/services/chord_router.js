@@ -40,15 +40,22 @@ function getSupabaseAnon() {
 // ---------------------------------------------------------------------------
 
 async function searchCache(query, lang) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return [];
   const q = query.trim();
-  const { data, error } = await getSupabaseAnon()
-    .from('cached_chords')
-    // Include chords_data so we can filter out bad (chord-less) entries
-    .select('id, song_title, artist, language, source, fetched_at, chords_data')
-    .eq('language', lang)
-    .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
-    .order('fetched_at', { ascending: false })
-    .limit(40);
+  let data, error;
+  try {
+    ({ data, error } = await getSupabaseAnon()
+      .from('cached_chords')
+      // Include chords_data so we can filter out bad (chord-less) entries
+      .select('id, song_title, artist, language, source, fetched_at, chords_data')
+      .eq('language', lang)
+      .or(`song_title.ilike.%${q}%,artist.ilike.%${q}%`)
+      .order('fetched_at', { ascending: false })
+      .limit(40));
+  } catch (e) {
+    console.warn('Cache search skipped (Supabase unavailable):', e.message);
+    return [];
+  }
 
   if (error) {
     console.error('Cache search error:', error.message);
@@ -65,14 +72,19 @@ async function searchCache(query, lang) {
 }
 
 async function getCachedById(id) {
-  const { data, error } = await getSupabaseAnon()
-    .from('cached_chords')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) return null;
-  return data;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
+  try {
+    const { data, error } = await getSupabaseAnon()
+      .from('cached_chords')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) return null;
+    return data;
+  } catch (e) {
+    console.warn('getCachedById skipped:', e.message);
+    return null;
+  }
 }
 
 async function saveToCache({ title, artist, lang, source, chordsData, url }) {
@@ -146,6 +158,10 @@ function searchUltimateGuitar(query) {
   return runPythonScraper('search.py', ['ug', query]) ?? [];
 }
 
+function searchCifraclub(query) {
+  return runPythonScraper('search.py', ['cifraclub', query]) ?? [];
+}
+
 /**
  * Fetch and parse chords for a specific URL.
  * fetch_chords.py now returns a full object:
@@ -153,7 +169,7 @@ function searchUltimateGuitar(query) {
  * Returns that object, or null on failure.
  */
 function fetchByUrl(source, url) {
-  const src = source === 'ultimate_guitar' ? 'ultimate_guitar' : 'tab4u';
+  const src = ['ultimate_guitar', 'tab4u', 'cifraclub'].includes(source) ? source : 'tab4u';
   const raw = runPythonScraper('fetch_chords.py', [src, url]);
   if (!raw) return null;
   // Expected: { title, artist, language, source, chords_data }
@@ -192,8 +208,9 @@ async function searchChords(query, lang = 'he') {
       if (lang === 'he') {
         return searchTab4U(query).map(r => toResult(r, 'tab4u'));
       }
-      const ug = searchUltimateGuitar(query).map(r => toResult(r, 'ultimate_guitar'));
-      if (ug.length > 0) return ug;
+      // English: Tab4U returns query-specific results and works from cloud IPs.
+      // UG blocks datacenter requests (403); Cifraclub search is JS-rendered (not usable).
+      // We search Tab4U here; at fetch time we try Cifraclub first for better chord data.
       return searchTab4U(query).map(r => toResult(r, 'tab4u'));
     })(),
   ]);
@@ -210,6 +227,41 @@ async function searchChords(query, lang = 'he') {
   });
 
   return [...cached, ...newFromScraper].slice(0, 20);
+}
+
+// ---------------------------------------------------------------------------
+// English fetch helper — try Cifraclub first (richer chord data), then Tab4U
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a string to a URL-safe slug:  "Don't Stop Me Now" → "dont-stop-me-now"
+ */
+function slugify(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip accents
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+
+/**
+ * Try to fetch chords from Cifraclub using a URL derived from title+artist.
+ * Returns the scraper result object, or null if the song isn't on Cifraclub.
+ */
+function tryFetchCifraclub(title, artist) {
+  if (!title) return null;
+  const artistSlug = slugify(artist);
+  const titleSlug  = slugify(title);
+  if (!artistSlug || !titleSlug) return null;
+  const guessUrl = `https://www.cifraclub.com/${artistSlug}/${titleSlug}/`;
+  const result = fetchByUrl('cifraclub', guessUrl);
+  if (!result || !Array.isArray(result.chords_data)) return null;
+  const chordLines = result.chords_data.filter(l => l.type === 'chords');
+  if (chordLines.length < 2) return null;  // Too sparse — not a real chord page
+  // Attach the URL we used
+  result.raw_url = guessUrl;
+  return result;
 }
 
 /**
@@ -237,13 +289,34 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     console.warn('Cache lookup skipped (Supabase unreachable):', cacheErr.message);
   }
 
-  // fetch_chords.py returns { title, artist, language, source, chords_data }
-  console.log(`[fetch] scraping source=${source} url=${url}`);
-  const scraped = fetchByUrl(source, url);
+  // For English Tab4U results, Cifraclub has richer chord data (positional format).
+  // Try Cifraclub first using a guessed URL; fall back to the original source if it fails.
+  let scraped = null;
+  let effectiveUrl    = url;
+  let effectiveSource = source;
 
-  console.log(`[fetch] scraper returned:`, scraped
-    ? `${scraped.chords_data?.length} lines, title='${scraped.title}', artist='${scraped.artist}'`
-    : 'null');
+  if (lang === 'en' && source === 'tab4u' && title) {
+    console.log(`[fetch] English song — trying Cifraclub first for '${title}' by '${artist}'`);
+    const cifraResult = tryFetchCifraclub(title, artist);
+    if (cifraResult) {
+      console.log(`[fetch] Cifraclub succeeded: ${cifraResult.chords_data.length} lines`);
+      scraped         = cifraResult;
+      effectiveUrl    = cifraResult.raw_url;
+      effectiveSource = 'cifraclub';
+    } else {
+      console.log(`[fetch] Cifraclub miss — falling back to Tab4U`);
+    }
+  }
+
+  if (!scraped) {
+    // fetch_chords.py returns { title, artist, language, source, chords_data }
+    console.log(`[fetch] scraping source=${effectiveSource} url=${effectiveUrl}`);
+    scraped = fetchByUrl(effectiveSource, effectiveUrl);
+
+    console.log(`[fetch] scraper returned:`, scraped
+      ? `${scraped.chords_data?.length} lines, title='${scraped.title}', artist='${scraped.artist}'`
+      : 'null');
+  }
 
   if (!scraped || !Array.isArray(scraped.chords_data) || scraped.chords_data.length === 0) return null;
 
@@ -258,9 +331,9 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
       title:      finalTitle,
       artist:     finalArtist,
       lang:       finalLang,
-      source,
+      source:     effectiveSource,
       chordsData: scraped.chords_data,
-      url,
+      url:        effectiveUrl,
     });
     if (cached) return cached;
   } catch (saveErr) {
@@ -272,9 +345,9 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     song_title:  finalTitle,
     artist:      finalArtist,
     language:    finalLang,
-    source,
+    source:      effectiveSource,
     chords_data: scraped.chords_data,
-    raw_url:     url,
+    raw_url:     effectiveUrl,
   };
 }
 
