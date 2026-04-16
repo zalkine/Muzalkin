@@ -256,7 +256,7 @@ export default function SearchPage() {
           recentSongs.length > 0 ? (
             <>
               <h2 style={{ margin: '0 0 14px', fontSize: 18, fontWeight: 800, color: '#fff' }}>Recently Played</h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {recentSongs.map((song, i) => (
                   <SongCard
                     key={song.id}
@@ -283,7 +283,7 @@ export default function SearchPage() {
 
         {/* Loading */}
         {status === 'loading' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {[0,1,2,3].map(i => <SongCardSkeleton key={i} />)}
           </div>
         )}
@@ -317,7 +317,7 @@ export default function SearchPage() {
                 {results.length} found
               </span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {results.map((item, idx) => {
                 const song = toSong(item, idx);
                 return (

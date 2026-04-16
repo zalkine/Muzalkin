@@ -79,9 +79,9 @@ export default function SongCard({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        padding: '12px 14px',
-        borderRadius: 16,
+        gap: 10,
+        padding: '8px 12px',
+        borderRadius: 12,
         background: 'rgba(255,255,255,0.04)',
         border: '1px solid rgba(255,255,255,0.07)',
         transition: 'background 0.2s, border-color 0.2s',
@@ -89,22 +89,22 @@ export default function SongCard({
         position: 'relative',
         overflow: 'hidden',
         animation: 'fadeInUp 0.25s ease both',
-        animationDelay: `${index * 55}ms`,
+        animationDelay: `${index * 40}ms`,
       }}
       onClick={() => onSelect(song)}
     >
       {/* Artwork */}
       <div style={{
-        width: 50,
-        height: 50,
-        borderRadius: 14,
+        width: 38,
+        height: 38,
+        borderRadius: 10,
         background: artwork,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 22,
+        fontSize: 17,
         flexShrink: 0,
-        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
         position: 'relative',
         overflow: 'hidden',
       }}>
@@ -118,20 +118,8 @@ export default function SongCard({
         <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {song.title}
         </p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
           <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>{song.artist}</span>
-          {song.source && (
-            <span style={{
-              fontSize: 10,
-              fontWeight: 600,
-              color: 'rgba(255,255,255,0.5)',
-              background: 'rgba(255,255,255,0.07)',
-              padding: '1px 7px',
-              borderRadius: 20,
-            }}>
-              {song.source.replace('-', ' ')}
-            </span>
-          )}
         </div>
         {diff && (
           <span style={{
