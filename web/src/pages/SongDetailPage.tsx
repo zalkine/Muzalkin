@@ -243,6 +243,7 @@ export default function SongDetailPage() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollOffset  = useRef(0);
   const scrollTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wakeLockRef   = useRef<WakeLockSentinel | null>(null);
   const [scrolling,   setScrolling]  = useState(false);
   const [speedIndex,  setSpeedIndex] = useState(1);
 
@@ -303,7 +304,11 @@ export default function SongDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
+    return () => {
+      if (scrollTimer.current) clearInterval(scrollTimer.current);
+      wakeLockRef.current?.release();
+      wakeLockRef.current = null;
+    };
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -484,8 +489,15 @@ export default function SongDetailPage() {
       if (scrollTimer.current) clearInterval(scrollTimer.current);
       scrollTimer.current = null;
       setScrolling(false);
+      // Release wake lock when scroll stops
+      wakeLockRef.current?.release();
+      wakeLockRef.current = null;
     } else {
       setScrolling(true);
+      // Request wake lock so screen stays on while scrolling
+      navigator.wakeLock?.request('screen')
+        .then(lock => { wakeLockRef.current = lock; })
+        .catch(() => {}); // silently ignore if unsupported or denied
       setTimeout(() => {
         scrollTimer.current = setInterval(() => {
           scrollOffset.current += SCROLL_SPEEDS[speedIndex];
