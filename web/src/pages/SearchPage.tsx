@@ -6,6 +6,7 @@ import { useJam } from '../lib/jamContext';
 import JamStatusCard from '../components/dashboard/JamStatusCard';
 import SongCard, { SongCardSkeleton } from '../components/dashboard/SongCard';
 import type { Song, User, JamSession } from '../components/dashboard/types';
+import { saveLastPlayed } from '../components/dashboard/NowPlayingBar';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type SearchResult = {
@@ -92,6 +93,7 @@ export default function SearchPage() {
   // ── Song selection ─────────────────────────────────────────────────────────
   const handleSelect = useCallback(async (song: Song) => {
     if (song.id && !song.id.startsWith('q') && !song.id.startsWith('r')) {
+      saveLastPlayed({ title: song.title, artist: song.artist, id: song.id });
       navigate(`/song/${song.id}`); return;
     }
     const item = results.find((r, i) => r.id === song.id || `r${i}` === song.id);
@@ -105,6 +107,7 @@ export default function SearchPage() {
       });
       if (!resp.ok) throw new Error(`${resp.status}`);
       const row = await resp.json();
+      saveLastPlayed({ title: item.song_title, artist: item.artist, id: row.id });
       navigate(row.id ? `/song/${row.id}` : '/song/_preview', { state: { song: row } });
     } catch { alert('Failed to load chords'); }
     finally { setFetchingId(null); }

@@ -8,6 +8,7 @@ import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
 import { normalizeChordData } from '../utils/chords';
 import StartJamModal from '../components/StartJamModal';
+import { saveLastPlayed } from '../components/dashboard/NowPlayingBar';
 
 // ---------------------------------------------------------------------------
 // Chord transposition helpers
@@ -300,6 +301,12 @@ export default function SongDetailPage() {
         setLoading(false);
       });
   }, [id]);
+
+  // Save to NowPlayingBar whenever a song is successfully loaded
+  useEffect(() => {
+    if (!song) return;
+    saveLastPlayed({ title: song.song_title, artist: song.artist, id: song.id });
+  }, [song]);
 
   useEffect(() => {
     return () => { if (scrollTimer.current) clearInterval(scrollTimer.current); };
