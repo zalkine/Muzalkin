@@ -99,7 +99,7 @@ export default function SwipeableMain() {
         onTouchEnd={onTouchEnd}
         onMouseDown={onMouseDown}
       >
-        <div style={{
+        <div dir="ltr" style={{
           position: 'absolute',
           top: 0, left: 0, bottom: 0,
           width: `${N * 100}%`,
