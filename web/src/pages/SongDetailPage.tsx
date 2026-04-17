@@ -8,7 +8,7 @@ import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
 import { normalizeChordData } from '../utils/chords';
 import StartJamModal from '../components/StartJamModal';
-import { saveLastPlayed } from '../components/dashboard/NowPlayingBar';
+import { saveLastPlayed, type FallbackSong } from '../components/dashboard/NowPlayingBar';
 
 // ---------------------------------------------------------------------------
 // Chord transposition helpers
@@ -315,7 +315,11 @@ export default function SongDetailPage() {
   // Save to NowPlayingBar whenever a song is successfully loaded
   useEffect(() => {
     if (!song) return;
-    saveLastPlayed({ title: song.song_title, artist: song.artist, id: song.id });
+    const fallback: FallbackSong | undefined = song.id ? undefined : {
+      song_title: song.song_title, artist: song.artist,
+      language: song.language, chords_data: song.chords_data as unknown[],
+    };
+    saveLastPlayed({ title: song.song_title, artist: song.artist, id: song.id, fallbackSong: fallback });
   }, [song]);
 
   // ---------------------------------------------------------------------------

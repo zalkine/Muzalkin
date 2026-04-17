@@ -5,7 +5,10 @@ import { useJam } from '../../lib/jamContext';
 // ── localStorage helpers ───────────────────────────────────────────────────
 export const LAST_PLAYED_KEY = 'muzalkin_last_played';
 
-export type LastPlayed = { title: string; artist: string; id?: string };
+export type FallbackSong = {
+  song_title: string; artist: string; language: string; chords_data: unknown[];
+};
+export type LastPlayed = { title: string; artist: string; id?: string; fallbackSong?: FallbackSong };
 
 export function saveLastPlayed(info: LastPlayed) {
   try { localStorage.setItem(LAST_PLAYED_KEY, JSON.stringify(info)); } catch {}
@@ -50,7 +53,11 @@ export default function NowPlayingBar() {
   };
 
   const handleClick = () => {
-    if (song.id) navigate(`/song/${song.id}`);
+    if (song.id) {
+      navigate(`/song/${song.id}`);
+    } else if (song.fallbackSong) {
+      navigate('/song/_preview', { state: { song: song.fallbackSong } });
+    }
   };
 
   return (
@@ -64,7 +71,7 @@ export default function NowPlayingBar() {
         background: 'rgba(18,18,42,0.97)',
         borderTop: '1px solid rgba(255,255,255,0.07)',
         backdropFilter: 'blur(20px)',
-        cursor: song.id ? 'pointer' : 'default',
+        cursor: (song.id || song.fallbackSong) ? 'pointer' : 'default',
         userSelect: 'none',
         position: 'relative',
       }}

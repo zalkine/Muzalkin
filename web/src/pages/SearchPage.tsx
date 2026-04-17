@@ -317,9 +317,9 @@ export default function SearchPage() {
           </div>
         )}
 
-        {/* Search results */}
+        {/* Search results — direction follows the search language, not the app language */}
         {status === 'done' && results.length > 0 && (
-          <>
+          <div dir={searchLang === 'he' ? 'rtl' : 'ltr'}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.35)', textTransform: 'uppercase', letterSpacing: 1 }}>
                 {isRTL ? 'תוצאות' : 'Results'}
@@ -332,7 +332,7 @@ export default function SearchPage() {
                 return <SongCard key={song.id} song={song} index={idx} onSelect={handleSelect} isLoading={fetchingId === song.id} showQueueBtn={!!jam.sessionCode} />;
               })}
             </div>
-          </>
+          </div>
         )}
 
         {/* Idle: Recently played by this user */}
