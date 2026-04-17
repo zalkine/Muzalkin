@@ -358,4 +358,24 @@ async function getChordsById(id) {
   return getCachedById(id);
 }
 
-module.exports = { searchChords, fetchChordsForSong, getChordsById };
+/**
+ * Return the N most recently fetched songs as a "popular" list.
+ * Optionally filtered by language.
+ */
+async function getPopularSongs(lang, limit = 10) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return [];
+  try {
+    let query = getSupabaseAnon()
+      .from('cached_chords')
+      .select('id, song_title, artist, language, source, fetched_at')
+      .order('fetched_at', { ascending: false })
+      .limit(limit * 3); // fetch extra to allow filtering
+    if (lang) query = query.eq('language', lang);
+    const { data, error } = await query;
+    if (error) return [];
+    return (data || []).slice(0, limit)
+      .map(r => ({ id: r.id, song_title: r.song_title, artist: r.artist, source: r.source }));
+  } catch { return []; }
+}
+
+module.exports = { searchChords, fetchChordsForSong, getChordsById, getPopularSongs };

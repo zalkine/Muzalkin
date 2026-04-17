@@ -4,8 +4,14 @@ import { initReactI18next } from 'react-i18next';
 import en from '../../locales/en.json';
 import he from '../../locales/he.json';
 
-// Detect saved language from localStorage, default to English
-const savedLang = localStorage.getItem('muzalkin_lang') ?? 'en';
+// Use saved preference; on first visit detect from device/browser language
+function detectDefaultLang(): 'he' | 'en' {
+  const saved = localStorage.getItem('muzalkin_lang');
+  if (saved === 'he' || saved === 'en') return saved;
+  // navigator.language is e.g. 'he', 'he-IL', 'en-US'
+  return navigator.language?.toLowerCase().startsWith('he') ? 'he' : 'en';
+}
+const savedLang = detectDefaultLang();
 
 i18next.use(initReactI18next).init({
   lng: savedLang,

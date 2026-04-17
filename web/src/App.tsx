@@ -20,8 +20,8 @@ import BottomNav            from './components/dashboard/BottomNav';
 
 import './styles/app.css';
 
-// Pages handled by the swipeable 3-panel layout
-const SWIPE_PATHS = new Set(['/search', '/menu', '/tuner']);
+// Pages handled by the swipeable 5-panel layout
+const SWIPE_PATHS = new Set(['/jam', '/menu', '/search', '/tuner', '/settings']);
 
 function AppShell() {
   const location = useLocation();

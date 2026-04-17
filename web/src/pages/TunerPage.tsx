@@ -101,11 +101,12 @@ export default function TunerPage() {
   const [activeStr,  setActiveStr]  = useState<number | null>(null);
   const [micDenied,  setMicDenied]  = useState(false);
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const streamRef   = useRef<MediaStream | null>(null);
-  const rafRef      = useRef<number | null>(null);
-  const lastUpdate  = useRef(0);
+  const audioCtxRef   = useRef<AudioContext | null>(null);
+  const analyserRef   = useRef<AnalyserNode | null>(null);
+  const streamRef     = useRef<MediaStream | null>(null);
+  const rafRef        = useRef<number | null>(null);
+  const lastUpdate    = useRef(0);
+  const smoothedCents = useRef(0); // EMA — avoids jumpy needle
 
   // Cleanup on unmount
   useEffect(() => () => stopTuner(), []);
@@ -114,9 +115,10 @@ export default function TunerPage() {
     if (rafRef.current)  { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     streamRef.current?.getTracks().forEach(t => t.stop());
     audioCtxRef.current?.close();
-    audioCtxRef.current = null;
-    analyserRef.current = null;
-    streamRef.current   = null;
+    audioCtxRef.current   = null;
+    analyserRef.current   = null;
+    streamRef.current     = null;
+    smoothedCents.current = 0;
     setRunning(false);
   }, []);
 
@@ -141,10 +143,12 @@ export default function TunerPage() {
         const f = detectPitch(buf, ctx.sampleRate);
         if (f) {
           const { name, cents: c } = freqToNote(f);
+          // EMA smoothing — α=0.12 gives ~8-frame lag, much less jumpy
+          // than raw cents which can swing ±30¢ between frames
+          smoothedCents.current = 0.12 * c + 0.88 * smoothedCents.current;
           setNote(name);
           setFreq(Math.round(f * 10) / 10);
-          setCents(c);
-          // Highlight closest string
+          setCents(Math.round(smoothedCents.current));
           const closest = STRINGS.reduce((best, s, i) =>
             Math.abs(s.freq - f) < Math.abs(STRINGS[best].freq - f) ? i : best, 0);
           setActiveStr(closest);

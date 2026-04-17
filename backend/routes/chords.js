@@ -1,7 +1,7 @@
 'use strict';
 
 const { Router } = require('express');
-const { searchChords, fetchChordsForSong, getChordsById } = require('../services/chord_router');
+const { searchChords, fetchChordsForSong, getChordsById, getPopularSongs } = require('../services/chord_router');
 
 const router = Router();
 
@@ -51,6 +51,22 @@ router.post('/fetch', async (req, res) => {
   } catch (err) {
     console.error('Chord fetch error:', err);
     res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/chords/popular?lang=he&limit=10
+// Returns the most recently fetched songs as a proxy for "most played"
+// ---------------------------------------------------------------------------
+
+router.get('/popular', async (req, res) => {
+  const { lang, limit = '10' } = req.query;
+  try {
+    const rows = await getPopularSongs(lang || null, Math.min(parseInt(limit, 10) || 10, 20));
+    res.json(rows);
+  } catch (err) {
+    console.error('Popular songs error:', err);
+    res.status(500).json({ error: 'Failed to fetch popular songs' });
   }
 });
 
