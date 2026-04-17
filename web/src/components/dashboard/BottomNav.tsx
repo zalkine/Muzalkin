@@ -73,7 +73,7 @@ export default function BottomNav() {
   const navigate = useNavigate();
 
   return (
-    <nav style={{
+    <nav dir="ltr" style={{
       display: 'flex',
       background: 'rgba(12,12,26,0.97)',
       borderTop: '1px solid rgba(255,255,255,0.06)',
