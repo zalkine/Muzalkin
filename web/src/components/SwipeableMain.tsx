@@ -8,8 +8,8 @@ import JoinJamPage   from '../pages/JoinJamPage';
 import NowPlayingBar from './dashboard/NowPlayingBar';
 import BottomNav     from './dashboard/BottomNav';
 
-// 5-panel order: Jam ← Menu ← Search → Tuner → Settings
-export const PAGE_ORDER = ['/jam', '/menu', '/search', '/tuner', '/settings'] as const;
+// 5-panel order: Menu ← Jam ← Search → Tuner → Settings
+export const PAGE_ORDER = ['/menu', '/jam', '/search', '/tuner', '/settings'] as const;
 const N = PAGE_ORDER.length;
 
 export default function SwipeableMain() {
@@ -108,8 +108,8 @@ export default function SwipeableMain() {
           transition: dragging ? 'none' : 'transform 0.38s cubic-bezier(0.25,0.46,0.45,0.94)',
           willChange: 'transform',
         }}>
-          <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><JoinJamPage /></div>
           <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><TilePage /></div>
+          <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><JoinJamPage /></div>
           <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><SearchPage /></div>
           <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><TunerPage /></div>
           <div style={{ flex: `0 0 ${100 / N}%`, height: '100%', overflowY: 'auto' }}><SettingsPage /></div>
