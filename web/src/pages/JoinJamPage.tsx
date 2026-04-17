@@ -3,7 +3,7 @@ import { useNavigate, useParams }       from 'react-router-dom';
 import { useTranslation }               from 'react-i18next';
 import { useJam }                       from '../lib/jamContext';
 import { useSession }                   from '../lib/SessionContext';
-import { supabase }                     from '../lib/supabase';
+import { signInWithGoogle }             from '../lib/supabase';
 
 // ── Small helpers ──────────────────────────────────────────────────────────────
 
@@ -182,10 +182,9 @@ export default function JoinJamPage() {
   }
 
   function handleGoogleLogin() {
-    supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options:  { redirectTo: `${window.location.origin}/jam` },
-    });
+    // Store return path so AuthCallback redirects back here after login
+    sessionStorage.setItem('auth_return', '/jam');
+    signInWithGoogle();
   }
 
   // ── Active session view ─────────────────────────────────────────────────────

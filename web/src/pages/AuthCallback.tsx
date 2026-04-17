@@ -13,7 +13,9 @@ export default function AuthCallback() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        navigate('/search', { replace: true });
+        const returnTo = sessionStorage.getItem('auth_return') ?? '/search';
+        sessionStorage.removeItem('auth_return');
+        navigate(returnTo, { replace: true });
       } else {
         navigate('/', { replace: true });
       }
