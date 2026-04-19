@@ -88,7 +88,15 @@ export function usePitchDetection() {
   const start = useCallback(async () => {
     try {
       setError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,  // these three are designed for voice calls —
+          noiseSuppression: false,  // they distort the signal and break pitch detection
+          autoGainControl:  false,  // on mobile especially
+          sampleRate: 44100,
+        },
+        video: false,
+      });
       streamRef.current = stream;
 
       const ctx = new AudioContext();
