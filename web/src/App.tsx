@@ -3,7 +3,7 @@ import { Route, Routes, useLocation } from 'react-router-dom';
 
 import { SessionProvider }  from './lib/SessionContext';
 import { ThemeProvider }    from './lib/ThemeContext';
-import { JamProvider }      from './lib/jamContext';
+import { JamProvider, useJam } from './lib/jamContext';
 import AuthCallback         from './pages/AuthCallback';
 import WelcomePage          from './pages/WelcomePage';
 import SongDetailPage       from './pages/SongDetailPage';
@@ -16,6 +16,7 @@ import SwipeableMain        from './components/SwipeableMain';
 import JamBanner            from './components/JamBanner';
 import JamQueueDrawer       from './components/JamQueueDrawer';
 import JamMemberList        from './components/JamMemberList';
+import JamSessionLayout     from './components/JamSessionLayout';
 import BottomNav            from './components/dashboard/BottomNav';
 
 import './styles/app.css';
@@ -25,6 +26,7 @@ const SWIPE_PATHS = new Set(['/jam', '/menu', '/search', '/tuner', '/settings'])
 
 function AppShell() {
   const location = useLocation();
+  const jam       = useJam();
   const isWelcome   = location.pathname === '/';
   const isSwipeable = SWIPE_PATHS.has(location.pathname);
   const isRTL       = document.documentElement.dir === 'rtl';
@@ -34,8 +36,8 @@ function AppShell() {
 
   return (
     <div className="app-root">
-      {/* Jam banner only on non-welcome pages */}
-      {!isWelcome && (
+      {/* Jam banner only on non-welcome pages and when no active session (session has its own header) */}
+      {!isWelcome && !jam.sessionCode && (
         <JamBanner
           onOpenQueue={() => setIsQueueOpen(true)}
           onOpenMembers={() => setIsMembersOpen(true)}
@@ -71,17 +73,24 @@ function AppShell() {
         </>
       )}
 
-      {/* Jam overlays — rendered outside the scroll area so they float above everything */}
-      <JamQueueDrawer
-        isOpen={isQueueOpen}
-        onClose={() => setIsQueueOpen(false)}
-        isRTL={isRTL}
-      />
-      <JamMemberList
-        isOpen={isMembersOpen}
-        onClose={() => setIsMembersOpen(false)}
-        isRTL={isRTL}
-      />
+      {/* Jam overlays for when no full-screen session is active */}
+      {!jam.sessionCode && (
+        <>
+          <JamQueueDrawer
+            isOpen={isQueueOpen}
+            onClose={() => setIsQueueOpen(false)}
+            isRTL={isRTL}
+          />
+          <JamMemberList
+            isOpen={isMembersOpen}
+            onClose={() => setIsMembersOpen(false)}
+            isRTL={isRTL}
+          />
+        </>
+      )}
+
+      {/* Full-screen jam session overlay — covers everything when session is active */}
+      {jam.sessionCode && <JamSessionLayout />}
     </div>
   );
 }

@@ -99,6 +99,10 @@ export type JamContextValue = {
   selectSong:      (queueItemId: string) => void;
   /** Jamaneger: advance to next song in queue. */
   playNext:        () => void;
+  /** Jamaneger: go back to the previous song in queue. */
+  playPrevious:    () => void;
+  /** Jamaneger: append every song in a playlist to the queue. */
+  addPlaylistToQueue: (playlistId: string) => Promise<void>;
 
   /** Jamaneger: remove a member from the session. */
   kickMember:      (userId: string) => Promise<void>;
@@ -618,6 +622,59 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     if (next) selectSong(next.id);
   }, [queue, currentQueueItemId, selectSong]);
 
+  const playPrevious = useCallback(() => {
+    if (roleRef.current !== 'jamaneger' || queue.length === 0) return;
+    const sorted = [...queue].sort((a, b) => a.position - b.position);
+    const currentIndex = sorted.findIndex(q => q.id === currentQueueItemId);
+    const prev = currentIndex > 0 ? sorted[currentIndex - 1] : sorted[sorted.length - 1];
+    if (prev) selectSong(prev.id);
+  }, [queue, currentQueueItemId, selectSong]);
+
+  const addPlaylistToQueue = useCallback(async (playlistId: string) => {
+    if (!sessionIdRef.current) return;
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Fetch songs from playlist ordered by position
+    const { data: rows } = await supabase
+      .from('playlist_songs')
+      .select('position, songs(id, title, artist)')
+      .eq('playlist_id', playlistId)
+      .order('position');
+
+    if (!rows || rows.length === 0) return;
+
+    const maxPos = queue.length > 0 ? Math.max(...queue.map(q => q.position)) + 1 : 0;
+
+    // Insert each song as a queue item
+    const inserts = rows.map((r, i) => {
+      const song = r.songs as { id: string; title: string; artist: string } | null;
+      if (!song) return null;
+      return {
+        session_id: sessionIdRef.current,
+        song_id:    song.id,
+        source:     'saved' as const,
+        title:      song.title,
+        artist:     song.artist,
+        position:   maxPos + i,
+        added_by:   user?.id ?? null,
+      };
+    }).filter(Boolean);
+
+    if (inserts.length === 0) return;
+
+    const { data: inserted } = await supabase
+      .from('jam_queue')
+      .insert(inserts)
+      .select('*');
+
+    if (!inserted) return;
+
+    const newItems = dbRowsToQueueItems(inserted);
+    const updated = [...queue, ...newItems];
+    setQueue(updated);
+    broadcastQueueUpdate(updated);
+  }, [queue, broadcastQueueUpdate]);
+
   // ---------------------------------------------------------------------------
   // Member management
   // ---------------------------------------------------------------------------
@@ -692,8 +749,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     startSession, joinSession, endSession, leaveSession,
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed,
     onSongChange, onScrollSync,
-    addToQueue, removeFromQueue, reorderQueue, selectSong, playNext,
-    kickMember, promoteMember,
+    addToQueue, removeFromQueue, reorderQueue, selectSong, playNext, playPrevious,
+    addPlaylistToQueue, kickMember, promoteMember,
   };
 
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;

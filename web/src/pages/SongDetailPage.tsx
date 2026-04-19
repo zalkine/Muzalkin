@@ -7,7 +7,6 @@ import { useSession } from '../lib/SessionContext';
 import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
 import { normalizeChordData } from '../utils/chords';
-import StartJamModal from '../components/StartJamModal';
 import { saveLastPlayed, type FallbackSong } from '../components/dashboard/NowPlayingBar';
 
 // ---------------------------------------------------------------------------
@@ -230,7 +229,6 @@ export default function SongDetailPage() {
   const session        = useSession();
   const jam            = useJam();
   const [isRTL, setIsRTL] = useState(i18n.language === 'he');
-  const [showJamModal, setShowJamModal] = useState(false);
 
   const [song,     setSong]     = useState<Song | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -634,16 +632,7 @@ export default function SongDetailPage() {
           </button>
         )}
 
-        {/* Start Jam button (no session) or Jam active indicator */}
-        {!editMode && jam.role === null && session && (
-          <button
-            onClick={() => setShowJamModal(true)}
-            title={t('jam_start_title')}
-            style={{ ...toolBtnStyle, borderColor: 'var(--accent)', fontSize: 18, padding: '5px 8px' }}
-          >
-            🎸
-          </button>
-        )}
+        {/* Jam active indicator for participants */}
         {!editMode && jam.role === 'jamember' && (
           <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>
             🎸 {t('jam_jamember_label')}
@@ -826,21 +815,6 @@ export default function SongDetailPage() {
           <ChordDisplay data={displayData} fontSize={fontSize} isRTL={isRTL} showTabs={showTabs} />
         )}
       </div>
-
-      {/* ── Start Jam modal ── */}
-      {showJamModal && song && (
-        <StartJamModal
-          song={{
-            songId: song.id,
-            source: savedId ? 'saved' : 'cached',
-            title:  song.song_title,
-            artist: song.artist,
-          }}
-          isRTL={isRTL}
-          onStarted={() => setShowJamModal(false)}
-          onCancel={() => setShowJamModal(false)}
-        />
-      )}
 
       {/* ── Add-to-playlist modal ── */}
       {showPLModal && (
