@@ -19,25 +19,28 @@ export interface PitchResult {
   frequency: number;
 }
 
-// Reject detections below this clarity — 0.9 filters noise while staying
-// responsive on clean guitar/piano notes
 const CLARITY_THRESHOLD = 0.9;
-// Require N consecutive frames on the same note before displaying it
-const STABILITY_FRAMES = 3;
+const STABILITY_FRAMES  = 3;
+// EMA smoothing factor for cents — lower = smoother needle, higher = faster response
+const CENTS_ALPHA       = 0.15;
+// Only push a new result to React state at most every N ms (matches CSS transition)
+const UPDATE_MS         = 100;
 
 export function usePitchDetection() {
   const [result, setResult] = useState<PitchResult | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const ctxRef       = useRef<AudioContext | null>(null);
-  const analyserRef  = useRef<AnalyserNode | null>(null);
-  const streamRef    = useRef<MediaStream | null>(null);
-  const rafRef       = useRef<number>(0);
-  const detectorRef  = useRef<PitchDetector<Float32Array> | null>(null);
-  const inputRef     = useRef<Float32Array | null>(null);
-  const prevKeyRef   = useRef<string>('');
-  const countRef     = useRef<number>(0);
+  const ctxRef         = useRef<AudioContext | null>(null);
+  const analyserRef    = useRef<AnalyserNode | null>(null);
+  const streamRef      = useRef<MediaStream | null>(null);
+  const rafRef         = useRef<number>(0);
+  const detectorRef    = useRef<PitchDetector<Float32Array> | null>(null);
+  const inputRef       = useRef<Float32Array | null>(null);
+  const prevKeyRef     = useRef<string>('');
+  const countRef       = useRef<number>(0);
+  const smoothCentsRef = useRef<number>(0);
+  const lastUpdateRef  = useRef<number>(0);
 
   const detect = useCallback(() => {
     const analyser = analyserRef.current;
@@ -53,17 +56,29 @@ export function usePitchDetection() {
       const key = `${note}${octave}`;
 
       if (key === prevKeyRef.current) {
+        // Smooth cents with EMA so the needle glides rather than jumps
+        smoothCentsRef.current = CENTS_ALPHA * cents + (1 - CENTS_ALPHA) * smoothCentsRef.current;
         countRef.current++;
+
         if (countRef.current >= STABILITY_FRAMES) {
-          setResult({ note, octave, cents, frequency: Math.round(freq * 10) / 10 });
+          const now = performance.now();
+          if (now - lastUpdateRef.current >= UPDATE_MS) {
+            lastUpdateRef.current = now;
+            setResult({
+              note, octave,
+              cents: Math.round(smoothCentsRef.current),
+              frequency: Math.round(freq * 10) / 10,
+            });
+          }
         }
       } else {
-        prevKeyRef.current = key;
-        countRef.current = 1;
+        prevKeyRef.current     = key;
+        countRef.current       = 1;
+        smoothCentsRef.current = cents; // reset smoothing on note change
       }
     } else {
-      prevKeyRef.current = '';
-      countRef.current = 0;
+      prevKeyRef.current     = '';
+      countRef.current       = 0;
       setResult(null);
     }
 

@@ -145,7 +145,7 @@ export default function TunerPage() {
               borderRadius: 2,
               background: noteColor,
               boxShadow: `0 0 8px ${noteColor}`,
-              transition: result ? 'left 0.08s ease-out, background 0.15s' : 'background 0.15s',
+              transition: result ? 'left 0.1s ease-out, background 0.2s' : 'background 0.2s',
             }} />
           </div>
 
