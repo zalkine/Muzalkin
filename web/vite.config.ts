@@ -6,6 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+    },
     proxy: {
       '/api': 'http://localhost:3001',
     },
