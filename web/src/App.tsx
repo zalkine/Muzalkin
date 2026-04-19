@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 
 import { SessionProvider } from './lib/SessionContext';
@@ -15,17 +16,27 @@ import JoinJamPage         from './pages/JoinJamPage';
 import TunerPage           from './pages/TunerPage';
 import NavBar              from './components/NavBar';
 import JamBanner           from './components/JamBanner';
+import JamQueueDrawer      from './components/JamQueueDrawer';
+import JamMemberList       from './components/JamMemberList';
 
 import './styles/app.css';
 
 function AppShell() {
   const location = useLocation();
   const showNav  = location.pathname !== '/';
+  const isRTL    = document.documentElement.dir === 'rtl';
+
+  const [isQueueOpen,   setIsQueueOpen]   = useState(false);
+  const [isMembersOpen, setIsMembersOpen] = useState(false);
 
   return (
     <div className="app-root">
       {/* Jam session status bar — visible whenever a session is active */}
-      <JamBanner />
+      <JamBanner
+        onOpenQueue={() => setIsQueueOpen(true)}
+        onOpenMembers={() => setIsMembersOpen(true)}
+        onLeft={() => { setIsQueueOpen(false); setIsMembersOpen(false); }}
+      />
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <Routes>
@@ -44,6 +55,18 @@ function AppShell() {
         </Routes>
       </div>
       {showNav && <NavBar />}
+
+      {/* Jam overlays */}
+      <JamQueueDrawer
+        isOpen={isQueueOpen}
+        onClose={() => setIsQueueOpen(false)}
+        isRTL={isRTL}
+      />
+      <JamMemberList
+        isOpen={isMembersOpen}
+        onClose={() => setIsMembersOpen(false)}
+        isRTL={isRTL}
+      />
     </div>
   );
 }

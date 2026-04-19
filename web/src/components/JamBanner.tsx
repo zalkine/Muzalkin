@@ -1,11 +1,10 @@
 /**
  * JamBanner
  *
- * A thin sticky bar shown at the top of the app whenever a jam session is
- * active. Displays the session code, participant count, and a leave/end button.
+ * Sticky bar shown at the top whenever a jam session is active.
  *
- * Host sees:  🎸 ABC123  👥 3  [End Session]
- * Viewer sees: 🎸 ABC123  👥 3  [Leave]
+ * Jamaneger sees: 🎸 ABC123 [Copy] | ▶ Next | 👥 3 Jamaneger | [Queue] [Members] [End]
+ * Jamember sees:  🎸 ABC123 [Copy] |          👥 3 Jamember  | [Queue] [Leave]
  */
 
 import { useState } from 'react';
@@ -13,19 +12,21 @@ import { useTranslation } from 'react-i18next';
 import { useJam } from '../lib/jamContext';
 
 type Props = {
-  /** Called after the host ends or viewer leaves — parent can navigate away. */
-  onLeft?: () => void;
+  onLeft?:         () => void;
+  onOpenQueue?:    () => void;
+  onOpenMembers?:  () => void;
 };
 
-export default function JamBanner({ onLeft }: Props) {
-  const { t } = useTranslation();
-  const jam    = useJam();
-  const [copied, setCopied] = useState(false);
+export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props) {
+  const { t }  = useTranslation();
+  const jam     = useJam();
+  const [copied,  setCopied]  = useState(false);
   const [leaving, setLeaving] = useState(false);
 
   if (!jam.sessionCode) return null;
 
-  const shareUrl = `${window.location.origin}/jam/${jam.sessionCode}`;
+  const isJamaneger = jam.role === 'jamaneger';
+  const shareUrl    = `${window.location.origin}/jam/${jam.sessionCode}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {
@@ -36,7 +37,7 @@ export default function JamBanner({ onLeft }: Props) {
 
   const handleLeaveOrEnd = async () => {
     setLeaving(true);
-    if (jam.role === 'host') {
+    if (isJamaneger) {
       await jam.endSession();
     } else {
       jam.leaveSession();
@@ -45,64 +46,93 @@ export default function JamBanner({ onLeft }: Props) {
     setLeaving(false);
   };
 
-  const isHost = jam.role === 'host';
+  // Current song title from queue
+  const currentSong = jam.queue.find(q => q.id === jam.currentQueueItemId);
 
   return (
     <div style={{
       display:         'flex',
       alignItems:      'center',
-      justifyContent:  'space-between',
       padding:         '6px 12px',
       backgroundColor: 'var(--accent)',
       color:           '#fff',
       fontSize:        13,
       gap:             8,
       flexShrink:      0,
+      flexWrap:        'wrap',
     }}>
-      {/* Left: icon + code */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {/* ── Left: code + copy ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
         <span style={{ fontSize: 16 }}>🎸</span>
         <span style={{ fontWeight: 700, letterSpacing: '0.12em' }}>
           {jam.sessionCode}
         </span>
-        {/* Copy link button */}
-        <button
-          onClick={handleCopy}
-          title={t('jam_copy_link')}
-          style={{
-            background: 'rgba(255,255,255,0.2)',
-            border: 'none', borderRadius: 4,
-            color: '#fff', fontSize: 11, fontWeight: 600,
-            padding: '2px 7px', cursor: 'pointer',
-          }}
-        >
+        <button onClick={handleCopy} style={chipBtn}>
           {copied ? '✓' : t('jam_copy')}
         </button>
       </div>
 
-      {/* Centre: participant count */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span>👥</span>
-        <span style={{ fontWeight: 600 }}>{jam.participantCount}</span>
-        <span style={{ opacity: 0.85 }}>
-          {isHost ? t('jam_host_label') : t('jam_viewer_label')}
-        </span>
+      {/* ── Centre: now-playing + next ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+        {currentSong && (
+          <span style={{
+            fontSize: 12, opacity: 0.9,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            ♪ {currentSong.title}
+          </span>
+        )}
+        {isJamaneger && (
+          <button
+            onClick={jam.playNext}
+            title={t('jam_play_next')}
+            style={{ ...chipBtn, flexShrink: 0 }}
+          >
+            {t('jam_play_next')} ▶
+          </button>
+        )}
       </div>
 
-      {/* Right: leave/end */}
-      <button
-        onClick={handleLeaveOrEnd}
-        disabled={leaving}
-        style={{
-          background: 'rgba(255,255,255,0.2)',
-          border: 'none', borderRadius: 5,
-          color: '#fff', fontSize: 12, fontWeight: 700,
-          padding: '4px 10px', cursor: 'pointer',
-          opacity: leaving ? 0.6 : 1,
-        }}
-      >
-        {isHost ? t('jam_end') : t('jam_leave')}
-      </button>
+      {/* ── Right: count + role + actions ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <span>👥 {jam.participantCount}</span>
+        <span style={{ opacity: 0.85 }}>
+          {isJamaneger ? t('jam_jamaneger_label') : t('jam_jamember_label')}
+        </span>
+
+        {/* Queue drawer toggle */}
+        <button onClick={onOpenQueue} style={chipBtn}>
+          {t('jam_queue_title')}
+        </button>
+
+        {/* Members panel (jamaneger only) */}
+        {isJamaneger && (
+          <button onClick={onOpenMembers} style={chipBtn}>
+            {t('jam_members_title')}
+          </button>
+        )}
+
+        {/* End / Leave */}
+        <button
+          onClick={handleLeaveOrEnd}
+          disabled={leaving}
+          style={{ ...chipBtn, fontWeight: 700, opacity: leaving ? 0.6 : 1 }}
+        >
+          {isJamaneger ? t('jam_end') : t('jam_leave')}
+        </button>
+      </div>
     </div>
   );
 }
+
+const chipBtn: React.CSSProperties = {
+  background:   'rgba(255,255,255,0.2)',
+  border:       'none',
+  borderRadius: 4,
+  color:        '#fff',
+  fontSize:     11,
+  fontWeight:   600,
+  padding:      '2px 7px',
+  cursor:       'pointer',
+  whiteSpace:   'nowrap',
+};
