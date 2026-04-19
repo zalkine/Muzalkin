@@ -82,5 +82,15 @@
   "jam_not_found": "קוד ג'אם לא נמצא",
   "jam_share_title": "שתף ג'אם",
   "jam_share_text": "הצטרף לג'אם שלי במוזלקין! קוד: {{code}}",
-  "tagline": "תיהנו לנגן עם MuZalkin"
+  "tagline": "תיהנו לנגן עם MuZalkin",
+  "tuner": "כוונן",
+  "tuner_title": "כוונן כלי נגינה",
+  "tuner_start": "התחל כוון",
+  "tuner_stop": "עצור",
+  "tuner_hint": "נגן צליל…",
+  "tuner_in_tune": "מכוון ✓",
+  "tuner_flat": "נמוך",
+  "tuner_sharp": "גבוה",
+  "tuner_permission_denied": "גישה למיקרופון נדחתה. אנא אפשר הרשאת מיקרופון בהגדרות הדפדפן.",
+  "tuner_mic_error": "לא ניתן לגשת למיקרופון. אנא בדוק את הגדרות המכשיר."
 }

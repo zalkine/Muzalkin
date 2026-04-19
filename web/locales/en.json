@@ -82,5 +82,15 @@
   "jam_not_found": "Jam code not found",
   "jam_share_title": "Share Jam",
   "jam_share_text": "Join my MuZalkin jam! Code: {{code}}",
-  "tagline": "Enjoy playing with MuZalkin"
+  "tagline": "Enjoy playing with MuZalkin",
+  "tuner": "Tuner",
+  "tuner_title": "Instrument Tuner",
+  "tuner_start": "Start Tuning",
+  "tuner_stop": "Stop",
+  "tuner_hint": "Play a note…",
+  "tuner_in_tune": "In Tune ✓",
+  "tuner_flat": "Flat",
+  "tuner_sharp": "Sharp",
+  "tuner_permission_denied": "Microphone access denied. Please allow microphone permission in your browser settings.",
+  "tuner_mic_error": "Could not access microphone. Please check your device settings."
 }

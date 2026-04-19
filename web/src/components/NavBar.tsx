@@ -7,6 +7,7 @@ import { signOut } from '../lib/supabase';
 const NAV_ITEMS = [
   { to: '/search',    labelKey: 'search',    icon: '🔍' },
   { to: '/playlists', labelKey: 'playlists', icon: '🎵' },
+  { to: '/tuner',     labelKey: 'tuner',     icon: '🎙️' },
   { to: '/settings',  labelKey: 'settings',  icon: '⚙️' },
 ];
 

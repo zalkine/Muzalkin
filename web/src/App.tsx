@@ -12,6 +12,7 @@ import PlaylistDetailPage  from './pages/PlaylistDetailPage';
 import SettingsPage        from './pages/SettingsPage';
 import LoginPage           from './pages/LoginPage';
 import JoinJamPage         from './pages/JoinJamPage';
+import TunerPage           from './pages/TunerPage';
 import NavBar              from './components/NavBar';
 import JamBanner           from './components/JamBanner';
 
@@ -35,6 +36,7 @@ function AppShell() {
           <Route path="/playlist/:id"       element={<PlaylistDetailPage />} />
           <Route path="/settings"      element={<SettingsPage />} />
           <Route path="/login"         element={<LoginPage />} />
+          <Route path="/tuner"         element={<TunerPage />} />
           <Route path="/jam/:code"     element={<JoinJamPage />} />
           <Route path="/jam"           element={<JoinJamPage />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
