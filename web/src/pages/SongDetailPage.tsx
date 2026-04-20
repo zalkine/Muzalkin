@@ -585,7 +585,13 @@ export default function SongDetailPage() {
     return (
       <div style={centerStyle}>
         <p style={{ color: '#cc3333' }}>{t('error_load')}</p>
-        <button onClick={() => navigate(-1)} style={linkBtnStyle}>{t('retry')}</button>
+        {jam.sessionCode ? (
+          <button onClick={() => navigate('/jam', { state: { fromJam: true } })} style={linkBtnStyle}>
+            🎸 {t('jam_back_to_session')}
+          </button>
+        ) : (
+          <button onClick={() => navigate(-1)} style={linkBtnStyle}>{t('retry')}</button>
+        )}
       </div>
     );
   }
