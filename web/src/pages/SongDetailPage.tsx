@@ -331,7 +331,7 @@ export default function SongDetailPage() {
   useEffect(() => {
     if (!jam.sessionCode || jam.isLead) return;
     return jam.onSongChange((ref) => {
-      if (!ref.songId) { navigate('/search'); return; }
+      if (!ref.songId) { navigate('/jam'); return; }
       if (ref.songId !== id) navigate(`/song/${ref.songId}`, { replace: true });
     });
   }, [jam, id, navigate]);
@@ -588,7 +588,16 @@ export default function SongDetailPage() {
   const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones), isRTL);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: jam.sessionCode ? 'color-mix(in srgb, var(--accent) 4%, var(--bg))' : 'var(--bg)' }}>
+
+      {/* ── Jam environment banner (shown only when in a session) ── */}
+      {jam.sessionCode && (
+        <div style={{
+          height: 3,
+          background: 'var(--accent)',
+          flexShrink: 0,
+        }} />
+      )}
 
       {/* ── Header ── */}
       <div style={{
@@ -598,7 +607,7 @@ export default function SongDetailPage() {
         padding: '10px 12px',
         borderBottom: '1px solid var(--border)',
         gap: 8,
-        backgroundColor: 'var(--bg)',
+        backgroundColor: jam.sessionCode ? 'color-mix(in srgb, var(--accent) 6%, var(--bg))' : 'var(--bg)',
       }}>
         <button onClick={() => { if (editMode) cancelEdit(); else navigate(-1); }}
           style={{ ...iconBtnStyle, fontSize: 22, color: 'var(--accent)' }}>
@@ -617,7 +626,7 @@ export default function SongDetailPage() {
           </button>
         )}
 
-        {/* Start Jam button (no session) or Jam active indicator */}
+        {/* Start Jam button (no session) or Back to Jam link (in session) */}
         {!editMode && jam.role === null && session && (
           <button
             onClick={() => setShowJamModal(true)}
@@ -627,10 +636,13 @@ export default function SongDetailPage() {
             🎸
           </button>
         )}
-        {!editMode && jam.role !== null && !jam.isLead && (
-          <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>
-            🎸 {jam.role === 'jamaneger' ? t('jam_jamaneger_label') : t('jam_jamember_label')}
-          </span>
+        {!editMode && jam.sessionCode && (
+          <button
+            onClick={() => navigate('/jam')}
+            style={{ ...toolBtnStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: '5px 10px', whiteSpace: 'nowrap' }}
+          >
+            🎸 {t('jam_back_to_session')}
+          </button>
         )}
 
         {/* Single save/playlist button */}

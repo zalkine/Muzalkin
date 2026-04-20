@@ -13,6 +13,7 @@ import PlaylistDetailPage  from './pages/PlaylistDetailPage';
 import SettingsPage        from './pages/SettingsPage';
 import LoginPage           from './pages/LoginPage';
 import JoinJamPage         from './pages/JoinJamPage';
+import JamPage             from './pages/JamPage';
 import TunerPage           from './pages/TunerPage';
 import NavBar              from './components/NavBar';
 import JamBanner           from './components/JamBanner';
@@ -22,21 +23,24 @@ import JamMemberList       from './components/JamMemberList';
 import './styles/app.css';
 
 function AppShell() {
-  const location = useLocation();
-  const showNav  = location.pathname !== '/';
-  const isRTL    = document.documentElement.dir === 'rtl';
+  const location  = useLocation();
+  const showNav   = location.pathname !== '/';
+  const isRTL     = document.documentElement.dir === 'rtl';
+  const isJamPage = location.pathname === '/jam';
 
   const [isQueueOpen,   setIsQueueOpen]   = useState(false);
   const [isMembersOpen, setIsMembersOpen] = useState(false);
 
   return (
     <div className="app-root">
-      {/* Jam session status bar — visible whenever a session is active */}
-      <JamBanner
-        onOpenQueue={() => setIsQueueOpen(true)}
-        onOpenMembers={() => setIsMembersOpen(true)}
-        onLeft={() => { setIsQueueOpen(false); setIsMembersOpen(false); }}
-      />
+      {/* Jam session status bar — hidden on /jam itself (JamPage is the hub) */}
+      {!isJamPage && (
+        <JamBanner
+          onOpenQueue={() => setIsQueueOpen(true)}
+          onOpenMembers={() => setIsMembersOpen(true)}
+          onLeft={() => { setIsQueueOpen(false); setIsMembersOpen(false); }}
+        />
+      )}
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <Routes>
@@ -49,7 +53,7 @@ function AppShell() {
           <Route path="/login"         element={<LoginPage />} />
           <Route path="/tuner"         element={<TunerPage />} />
           <Route path="/jam/:code"     element={<JoinJamPage />} />
-          <Route path="/jam"           element={<JoinJamPage />} />
+          <Route path="/jam"           element={<JamPage />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="*"              element={<WelcomePage />} />
         </Routes>

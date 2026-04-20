@@ -68,8 +68,8 @@ export type JamContextValue = {
   semitones:          number;
   speedIndex:         number;
 
-  /** Jamaneger: create a new session. Returns the 6-char code. */
-  startSession:    (song: SongRef) => Promise<string | null>;
+  /** Jamaneger: create a new session. Returns the 6-char code. Optionally seeds queue with opening song. */
+  startSession:    (song?: SongRef) => Promise<string | null>;
   /** Anyone: join an existing session by code. Returns the current song if found. */
   joinSession:     (code: string, nickname?: string, preferredRole?: 'jamaneger' | 'jamember') => Promise<SongRef | null>;
   /** Jamaneger: end the session for everyone. */
@@ -311,7 +311,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
   // startSession (jamaneger — creator)
   // ---------------------------------------------------------------------------
-  const startSession = useCallback(async (song: SongRef): Promise<string | null> => {
+  const startSession = useCallback(async (song?: SongRef): Promise<string | null> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
     currentUserIdRef.current = user.id;
@@ -326,8 +326,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
         code,
         host_user_id:        user.id,
         lead_user_id:        user.id,
-        current_song_id:     song.songId,
-        current_song_source: song.source,
+        current_song_id:     song?.songId ?? null,
+        current_song_source: song?.source ?? null,
         is_active:           true,
         current_transpose:   0,
         current_speed_index: 1,
@@ -344,18 +344,22 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       p_display_name: displayName,
     });
 
-    // Seed queue with the opening song
-    const { data: queueRow } = await supabase.from('jam_queue').insert({
-      session_id: newSessionId,
-      song_id:    song.songId,
-      source:     song.source,
-      title:      song.title,
-      artist:     song.artist,
-      position:   0,
-      added_by:   user.id,
-    }).select('*').single();
-
-    const initialQueue = queueRow ? dbRowsToQueueItems([queueRow]) : [];
+    // Seed queue with the opening song (only when one is provided)
+    let initialQueue: QueueItem[] = [];
+    let initialQueueItemId: string | null = null;
+    if (song) {
+      const { data: queueRow } = await supabase.from('jam_queue').insert({
+        session_id: newSessionId,
+        song_id:    song.songId,
+        source:     song.source,
+        title:      song.title,
+        artist:     song.artist,
+        position:   0,
+        added_by:   user.id,
+      }).select('*').single();
+      initialQueue = queueRow ? dbRowsToQueueItems([queueRow]) : [];
+      initialQueueItemId = queueRow?.id ?? null;
+    }
 
     isGuestRef.current  = false;
     isLeadRef.current   = true;
@@ -365,7 +369,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setSessionCode(code);
     setSessionId(newSessionId);
     setQueue(initialQueue);
-    setCurrentQueueItemId(queueRow?.id ?? null);
+    setCurrentQueueItemId(initialQueueItemId);
     setSemitones(0);
     setSpeedIndex(1);
     setMembers([{ userId: user.id, displayName, role: 'jamaneger', isGuest: false }]);

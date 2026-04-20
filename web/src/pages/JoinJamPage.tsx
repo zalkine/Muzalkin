@@ -69,11 +69,8 @@ export default function JoinJamPage() {
     const songRef = await jam.joinSession(clean, nickname.trim(), preferredRole);
     if (!songRef) { setStatus('error'); return; }
 
-    if (songRef.songId) {
-      navigate(`/song/${songRef.songId}`, { replace: true });
-    } else {
-      navigate('/search', { replace: true });
-    }
+    // Always land on the jam hub after joining
+    navigate('/jam', { replace: true });
   }
 
   const canJoin = inputCode.length === 6 && nickname.trim().length > 0 && status !== 'joining';
