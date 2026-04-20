@@ -322,16 +322,16 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     let newSessionId = '';
     for (let attempt = 0; attempt < 5; attempt++) {
       code = generateCode();
-      const { data, error } = await supabase.from('jam_sessions').insert({
+      const sessionRow = {
         code,
         host_user_id:        user.id,
         lead_user_id:        user.id,
-        current_song_id:     song?.songId ?? null,
-        current_song_source: song?.source ?? null,
         is_active:           true,
         current_transpose:   0,
         current_speed_index: 1,
-      }).select('id').single();
+        ...(song ? { current_song_id: song.songId, current_song_source: song.source } : {}),
+      };
+      const { data, error } = await supabase.from('jam_sessions').insert(sessionRow).select('id').single();
       if (!error && data) { newSessionId = data.id; break; }
       code = '';
     }
