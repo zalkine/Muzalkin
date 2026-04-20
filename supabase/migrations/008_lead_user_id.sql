@@ -6,7 +6,7 @@
 -- ============================================================
 
 ALTER TABLE jam_sessions
-  ADD COLUMN IF NOT EXISTS lead_user_id uuid REFERENCES users(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS lead_user_id uuid;  -- no FK: auth user IDs may not exist in public.users
 
 -- ── take_jam_lead ─────────────────────────────────────────────────────────
 -- Any jamanager can call this to take screen-control from the current lead.
