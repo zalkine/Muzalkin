@@ -106,6 +106,10 @@ export type JamContextValue = {
   kickMember:      (userId: string) => Promise<void>;
   /** Jamaneger: promote a jamember to jamaneger. */
   promoteMember:   (userId: string) => Promise<void>;
+  /** Non-lead jamanager: take screen control from the current lead. */
+  takeLead:        () => Promise<void>;
+  /** Anyone: add multiple songs to the queue in one batch. */
+  addManyToQueue:  (songs: SongRef[]) => Promise<void>;
 };
 
 // ---------------------------------------------------------------------------
@@ -262,7 +266,6 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     });
 
     channel.on('broadcast', { event: 'role_change' }, ({ payload }: { payload: { userId: string; role: 'jamaneger' | 'jamember' } }) => {
-      // If this user was promoted, update their own role
       if (payload.userId === currentUserIdRef.current) {
         setRole(payload.role);
         roleRef.current = payload.role;
@@ -270,6 +273,12 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       setMembers(prev => prev.map(m =>
         m.userId === payload.userId ? { ...m, role: payload.role } : m,
       ));
+    });
+
+    channel.on('broadcast', { event: 'lead_change' }, ({ payload }: { payload: { userId: string } }) => {
+      const iAmLead = payload.userId === currentUserIdRef.current;
+      isLeadRef.current = iAmLead;
+      setIsLead(iAmLead);
     });
 
     channel.on('broadcast', { event: 'remove_participant' }, ({ payload }: { payload: { userId: string } }) => {
@@ -316,6 +325,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.from('jam_sessions').insert({
         code,
         host_user_id:        user.id,
+        lead_user_id:        user.id,
         current_song_id:     song.songId,
         current_song_source: song.source,
         is_active:           true,
@@ -375,7 +385,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     const { data: session, error } = await supabase
       .from('jam_sessions')
-      .select('id, host_user_id, current_song_id, current_song_source, current_transpose, current_speed_index')
+      .select('id, host_user_id, lead_user_id, current_song_id, current_song_source, current_transpose, current_speed_index')
       .eq('code', upper)
       .eq('is_active', true)
       .single();
@@ -395,8 +405,9 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       isGuest = false;
       resolvedUserId  = user.id;
       resolvedName    = nickname ?? (user.user_metadata?.full_name ?? user.email ?? 'Jamember');
-      // Host is always lead; others are lead only if they ARE the host
-      resolvedIsLead  = user.id === session.host_user_id;
+      // lead_user_id takes precedence; falls back to host_user_id for older sessions
+      const effectiveLead = session.lead_user_id ?? session.host_user_id;
+      resolvedIsLead  = user.id === effectiveLead;
 
       const { data: assignedRole } = await supabase.rpc('join_jam_session', {
         p_session_id:     session.id,
@@ -737,6 +748,56 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, [members, broadcastMemberList]);
 
   // ---------------------------------------------------------------------------
+  // Take Lead (non-lead jamanager takes screen control)
+  // ---------------------------------------------------------------------------
+
+  const takeLead = useCallback(async () => {
+    if (roleRef.current !== 'jamaneger' || !sessionIdRef.current || !currentUserIdRef.current) return;
+    if (isLeadRef.current) return;
+
+    await supabase.rpc('take_jam_lead', {
+      p_session_id: sessionIdRef.current,
+      p_user_id:    currentUserIdRef.current,
+    });
+
+    isLeadRef.current = true;
+    setIsLead(true);
+
+    channelRef.current?.send({
+      type: 'broadcast', event: 'lead_change',
+      payload: { userId: currentUserIdRef.current },
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // addManyToQueue — batch add, single broadcast
+  // ---------------------------------------------------------------------------
+
+  const addManyToQueue = useCallback(async (songs: SongRef[]) => {
+    if (!sessionIdRef.current || songs.length === 0) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id ?? null;
+
+    const maxPos = queue.length > 0 ? Math.max(...queue.map(q => q.position)) + 1 : 0;
+    const rows = songs.map((song, i) => ({
+      session_id: sessionIdRef.current!,
+      song_id:    song.songId,
+      source:     song.source,
+      title:      song.title,
+      artist:     song.artist,
+      position:   maxPos + i,
+      added_by:   userId,
+    }));
+
+    const { data: insertedRows } = await supabase.from('jam_queue').insert(rows).select('*');
+    if (!insertedRows) return;
+
+    const updated = [...queue, ...dbRowsToQueueItems(insertedRows)];
+    setQueue(updated);
+    broadcastQueueUpdate(updated);
+  }, [queue, broadcastQueueUpdate]);
+
+  // ---------------------------------------------------------------------------
   // Subscription helpers
   // ---------------------------------------------------------------------------
 
@@ -764,7 +825,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed,
     onSongChange, onScrollSync,
     addToQueue, removeFromQueue, reorderQueue, selectSong, playNext,
-    kickMember, promoteMember,
+    kickMember, promoteMember, takeLead, addManyToQueue,
   };
 
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;
