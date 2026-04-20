@@ -42,6 +42,20 @@ function AppShell() {
     }
   }, [jam.sessionCode, jam.role, location.pathname, navigate]);
 
+  // Global song-change follower: all non-lead users follow the lead's song pick
+  // regardless of which page they are currently on.
+  // Jamanagers can still browse freely between picks — this fires on the next pick.
+  useEffect(() => {
+    if (!jam.sessionCode || jam.isLead) return;
+    return jam.onSongChange((ref) => {
+      if (!ref.songId) {
+        navigate('/jam', { replace: true });
+      } else {
+        navigate(`/song/${ref.songId}`, { replace: true });
+      }
+    });
+  }, [jam.sessionCode, jam.isLead, navigate, jam]);
+
   return (
     <div className="app-root">
       {/* Orange session frame — fixed overlay, pointer-events: none so it doesn't block clicks */}

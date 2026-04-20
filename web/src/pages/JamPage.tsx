@@ -64,15 +64,6 @@ export default function JamPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jam.sessionCode, jam.isLead]);
 
-  // Subscribe to song changes — navigate non-leads whenever lead picks a new song
-  useEffect(() => {
-    if (!jam.sessionCode || jam.isLead) return;
-    return jam.onSongChange((ref) => {
-      if (ref.songId) navigate(`/song/${ref.songId}`, { replace: true });
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jam.sessionCode, jam.isLead, navigate]);
-
   // Detect auth + pre-fill nickname
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {

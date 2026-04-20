@@ -327,15 +327,6 @@ export default function SongDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song?.id, jam.isLead]);
 
-  // Non-lead (managers + jamembers): navigate when lead changes song
-  useEffect(() => {
-    if (!jam.sessionCode || jam.isLead) return;
-    return jam.onSongChange((ref) => {
-      if (!ref.songId) { navigate('/jam'); return; }
-      if (ref.songId !== id) navigate(`/song/${ref.songId}`, { replace: true });
-    });
-  }, [jam, id, navigate]);
-
   // Non-lead: sync scroll position from lead
   useEffect(() => {
     if (!jam.sessionCode || jam.isLead) return;
