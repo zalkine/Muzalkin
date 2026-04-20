@@ -698,32 +698,32 @@ export default function SongDetailPage() {
             >A+</button>
           </div>
 
-          {/* Transpose — lead broadcasts; non-leads see current value read-only */}
+          {/* Transpose — always shown outside a session; lead-only inside a session */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {jam.isLead && (
+            {(!jam.sessionCode || jam.isLead) && (
               <button style={toolBtnStyle} onClick={() => {
                 const next = Math.max(-11, semitones - 1);
                 setSemitones(next);
-                jam.broadcastTranspose(next);
+                if (jam.isLead) jam.broadcastTranspose(next);
               }}>
                 {t('transpose_down')}
               </button>
             )}
             <button
-              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap', cursor: jam.isLead ? 'pointer' : 'default' }}
+              style={{ ...toolBtnStyle, minWidth: 52, borderColor: semitones !== 0 ? 'var(--chord-color)' : 'var(--border)', color: semitones !== 0 ? 'var(--chord-color)' : 'var(--text3)', whiteSpace: 'nowrap', cursor: (!jam.sessionCode || jam.isLead) ? 'pointer' : 'default' }}
               onClick={() => {
-                if (!jam.isLead) return;
+                if (jam.sessionCode && !jam.isLead) return;
                 setSemitones(0);
-                jam.broadcastTranspose(0);
+                if (jam.isLead) jam.broadcastTranspose(0);
               }}
             >
               {semitones > 0 ? '+' : ''}{semitones / 2} {t('semitones')}
             </button>
-            {jam.isLead && (
+            {(!jam.sessionCode || jam.isLead) && (
               <button style={toolBtnStyle} onClick={() => {
                 const next = Math.min(11, semitones + 1);
                 setSemitones(next);
-                jam.broadcastTranspose(next);
+                if (jam.isLead) jam.broadcastTranspose(next);
               }}>
                 {t('transpose_up')}
               </button>
@@ -732,17 +732,17 @@ export default function SongDetailPage() {
 
           {/* Scroll + share + playlist */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {jam.isLead && (
+            {(!jam.sessionCode || jam.isLead) && (
               <button style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
-                onClick={() => { adjustSpeed(-1); jam.broadcastSpeed(Math.max(0, speedIndex - 1)); }}
+                onClick={() => { adjustSpeed(-1); if (jam.isLead) jam.broadcastSpeed(Math.max(0, speedIndex - 1)); }}
                 disabled={speedIndex === 0}>−</button>
             )}
             <span style={{ fontSize: 12, fontWeight: 700, minWidth: 32, textAlign: 'center', color: 'var(--text)' }}>
               {`×${SCROLL_SPEEDS[speedIndex].toFixed(1)}`}
             </span>
-            {jam.isLead && (
+            {(!jam.sessionCode || jam.isLead) && (
               <button style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
-                onClick={() => { adjustSpeed(1); jam.broadcastSpeed(Math.min(SCROLL_SPEEDS.length - 1, speedIndex + 1)); }}
+                onClick={() => { adjustSpeed(1); if (jam.isLead) jam.broadcastSpeed(Math.min(SCROLL_SPEEDS.length - 1, speedIndex + 1)); }}
                 disabled={speedIndex === SCROLL_SPEEDS.length - 1}>+</button>
             )}
             <button
