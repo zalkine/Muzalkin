@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate }                 from 'react-router-dom';
+import { useNavigate, useLocation }    from 'react-router-dom';
 import { useTranslation }              from 'react-i18next';
 import { useJam }                      from '../lib/jamContext';
 import { useSession }                  from '../lib/SessionContext';
@@ -32,6 +32,7 @@ function randomGuestName() {
 export default function JamPage() {
   const { t, i18n } = useTranslation();
   const navigate     = useNavigate();
+  const location     = useLocation();
   const jam          = useJam();
   const session      = useSession();
   const isRTL        = i18n.language === 'he';
@@ -50,6 +51,27 @@ export default function JamPage() {
 
   // ── Start form state ───────────────────────────────────────────────────────
   const [startStatus, setStartStatus] = useState<'idle' | 'starting'>('idle');
+
+  // Auto-navigate non-leads to the current song when they land on /jam
+  // (unless they explicitly came back via the "🎸 Back to Session" button)
+  useEffect(() => {
+    if (!jam.sessionCode || jam.isLead) return;
+    const fromJam = (location.state as { fromJam?: boolean } | null)?.fromJam;
+    if (fromJam) return;
+    if (!jam.currentQueueItemId) return;
+    const current = jam.queue.find(q => q.id === jam.currentQueueItemId);
+    if (current) navigate(`/song/${current.songId}`, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jam.sessionCode, jam.isLead]);
+
+  // Subscribe to song changes — navigate non-leads whenever lead picks a new song
+  useEffect(() => {
+    if (!jam.sessionCode || jam.isLead) return;
+    return jam.onSongChange((ref) => {
+      if (ref.songId) navigate(`/song/${ref.songId}`, { replace: true });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jam.sessionCode, jam.isLead, navigate]);
 
   // Detect auth + pre-fill nickname
   useEffect(() => {
@@ -145,9 +167,7 @@ export default function JamPage() {
             <button onClick={handleCopy} style={chipBtn}>
               {copied ? '✓' : t('jam_copy')}
             </button>
-            {isJamaneger && (
-              <button onClick={handleShare} style={chipBtn}>{t('share')}</button>
-            )}
+            <button onClick={handleShare} style={chipBtn}>{t('share')}</button>
             <span style={{ marginInlineStart: 'auto', fontSize: 13, opacity: 0.9 }}>
               👥 {jam.participantCount} · {roleLabel}
             </span>

@@ -22,6 +22,9 @@ export default function NavBar() {
     if (session) { await signOut(); } else { navigate('/login'); }
   };
 
+  // Jamembers in session see only the Jam icon
+  const isRestrictedJamember = !!jam.sessionCode && jam.role === 'jamember';
+
   return (
     <nav style={{
       display: 'flex',
@@ -30,7 +33,7 @@ export default function NavBar() {
       backgroundColor: 'var(--surface)',
       paddingBottom: 'env(safe-area-inset-bottom)',
     }}>
-      {NAV_ITEMS.map(({ to, labelKey, icon }) => (
+      {!isRestrictedJamember && NAV_ITEMS.map(({ to, labelKey, icon }) => (
         <NavLink
           key={to}
           to={to}
@@ -113,28 +116,30 @@ export default function NavBar() {
         )}
       </NavLink>
 
-      {/* Sign in / out */}
-      <button
-        onClick={handleAuth}
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '10px 0 8px',
-          gap: 3,
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--text3)',
-          fontSize: 11,
-          position: 'relative',
-        }}
-      >
-        <span style={{ fontSize: 22 }}>{session ? '👤' : '🔑'}</span>
-        <span>{session ? t('sign_out') : t('sign_in_google')}</span>
-      </button>
+      {/* Sign in / out — hidden for jamembers in session */}
+      {!isRestrictedJamember && (
+        <button
+          onClick={handleAuth}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '10px 0 8px',
+            gap: 3,
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text3)',
+            fontSize: 11,
+            position: 'relative',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>{session ? '👤' : '🔑'}</span>
+          <span>{session ? t('sign_out') : t('sign_in_google')}</span>
+        </button>
+      )}
     </nav>
   );
 }

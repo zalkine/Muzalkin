@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Route, Routes, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 
 import { SessionProvider } from './lib/SessionContext';
 import { ThemeProvider }   from './lib/ThemeContext';
-import { JamProvider }     from './lib/jamContext';
+import { JamProvider, useJam } from './lib/jamContext';
 import AuthCallback        from './pages/AuthCallback';
 import WelcomePage         from './pages/WelcomePage';
 import SearchPage          from './pages/SearchPage';
@@ -24,15 +24,36 @@ import './styles/app.css';
 
 function AppShell() {
   const location  = useLocation();
+  const navigate  = useNavigate();
   const showNav   = location.pathname !== '/';
   const isRTL     = document.documentElement.dir === 'rtl';
   const isJamPage = location.pathname === '/jam';
+  const jam       = useJam();
 
   const [isQueueOpen,   setIsQueueOpen]   = useState(false);
   const [isMembersOpen, setIsMembersOpen] = useState(false);
 
+  // Route guard: jamembers in session can only access /jam and /song/:id
+  useEffect(() => {
+    if (!jam.sessionCode || jam.role !== 'jamember') return;
+    const restricted = ['/search', '/playlists', '/settings', '/tuner', '/login'];
+    if (restricted.some(r => location.pathname.startsWith(r))) {
+      navigate('/jam', { replace: true });
+    }
+  }, [jam.sessionCode, jam.role, location.pathname, navigate]);
+
   return (
     <div className="app-root">
+      {/* Orange session frame — fixed overlay, pointer-events: none so it doesn't block clicks */}
+      {jam.sessionCode && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          border: '4px solid var(--accent)',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          boxSizing: 'border-box',
+        }} />
+      )}
       {/* Jam session status bar — hidden on /jam itself (JamPage is the hub) */}
       {!isJamPage && (
         <JamBanner

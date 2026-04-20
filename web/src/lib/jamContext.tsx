@@ -85,11 +85,15 @@ export type JamContextValue = {
   broadcastTranspose:  (semitones: number) => void;
   /** Jamaneger: broadcast scroll-speed index change. */
   broadcastSpeed:      (speedIndex: number) => void;
+  /** Jamaneger: broadcast font size change. */
+  broadcastFontSize:   (size: number) => void;
 
   /** Subscribe to song-change events. Returns unsubscribe fn. */
   onSongChange: (handler: (song: SongRef) => void) => () => void;
   /** Subscribe to scroll-sync events. Returns unsubscribe fn. */
   onScrollSync: (handler: (pos: number) => void) => () => void;
+  /** Subscribe to font-size sync events. Returns unsubscribe fn. */
+  onFontSizeSync: (handler: (size: number) => void) => () => void;
 
   /** Anyone: add a song to the queue. Broadcasts queue_update to all. */
   addToQueue:      (song: SongRef) => Promise<void>;
@@ -162,6 +166,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const isLeadRef           = useRef<boolean>(false);
   const songChangeHandlers  = useRef<Set<(song: SongRef) => void>>(new Set());
   const scrollSyncHandlers  = useRef<Set<(pos: number) => void>>(new Set());
+  const fontSizeHandlers    = useRef<Set<(size: number) => void>>(new Set());
   const lastScrollBroadcast = useRef(0);
 
   // Keep refs in sync so callbacks always see current values without stale closures
@@ -230,6 +235,10 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     channel.on('broadcast', { event: 'scroll_sync' }, ({ payload }: { payload: { position: number } }) => {
       scrollSyncHandlers.current.forEach(h => h(payload.position));
+    });
+
+    channel.on('broadcast', { event: 'font_size_change' }, ({ payload }: { payload: { size: number } }) => {
+      fontSizeHandlers.current.forEach(h => h(payload.size));
     });
 
     channel.on('broadcast', { event: 'session_end' }, () => {
@@ -588,6 +597,13 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const broadcastFontSize = useCallback((size: number) => {
+    if (!channelRef.current || !isLeadRef.current) return;
+    channelRef.current.send({
+      type: 'broadcast', event: 'font_size_change', payload: { size },
+    });
+  }, []);
+
   const broadcastSpeed = useCallback((newSpeedIndex: number) => {
     if (!channelRef.current || !isLeadRef.current) return;
     setSpeedIndex(newSpeedIndex);
@@ -817,6 +833,11 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     return () => { scrollSyncHandlers.current.delete(handler); };
   }, []);
 
+  const onFontSizeSync = useCallback((handler: (size: number) => void) => {
+    fontSizeHandlers.current.add(handler);
+    return () => { fontSizeHandlers.current.delete(handler); };
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -828,8 +849,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     role, isLead, sessionCode, sessionId, participantCount, isConnected,
     members, queue, currentQueueItemId, semitones, speedIndex,
     startSession, joinSession, endSession, leaveSession,
-    broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed,
-    onSongChange, onScrollSync,
+    broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed, broadcastFontSize,
+    onSongChange, onScrollSync, onFontSizeSync,
     addToQueue, removeFromQueue, reorderQueue, selectSong, playNext,
     kickMember, promoteMember, takeLead, addManyToQueue,
   };

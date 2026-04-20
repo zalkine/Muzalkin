@@ -358,6 +358,20 @@ export default function SongDetailPage() {
     setSpeedIndex(jam.speedIndex);
   }, [jam.sessionCode, jam.isLead, jam.speedIndex]);
 
+  // Lead: broadcast font size changes to all participants
+  useEffect(() => {
+    if (!jam.isLead || !jam.sessionCode) return;
+    jam.broadcastFontSize(fontSize);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontSize, jam.isLead, jam.sessionCode]);
+
+  // Non-lead: sync font size from lead
+  useEffect(() => {
+    if (!jam.sessionCode || jam.isLead) return;
+    return jam.onFontSizeSync(setFontSize);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jam.sessionCode, jam.isLead]);
+
   // ---------------------------------------------------------------------------
   // Save to songs table
   // ---------------------------------------------------------------------------
@@ -638,7 +652,7 @@ export default function SongDetailPage() {
         )}
         {!editMode && jam.sessionCode && (
           <button
-            onClick={() => navigate('/jam')}
+            onClick={() => navigate('/jam', { state: { fromJam: true } })}
             style={{ ...toolBtnStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: '5px 10px', whiteSpace: 'nowrap' }}
           >
             🎸 {t('jam_back_to_session')}
