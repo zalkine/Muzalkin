@@ -57,6 +57,7 @@ export type JamMember = {
 
 export type JamContextValue = {
   role:               JamRole;
+  isLead:             boolean;   // true only for the session creator (host)
   sessionCode:        string | null;
   sessionId:          string | null;
   participantCount:   number;
@@ -70,7 +71,7 @@ export type JamContextValue = {
   /** Jamaneger: create a new session. Returns the 6-char code. */
   startSession:    (song: SongRef) => Promise<string | null>;
   /** Anyone: join an existing session by code. Returns the current song if found. */
-  joinSession:     (code: string, nickname?: string) => Promise<SongRef | null>;
+  joinSession:     (code: string, nickname?: string, preferredRole?: 'jamaneger' | 'jamember') => Promise<SongRef | null>;
   /** Jamaneger: end the session for everyone. */
   endSession:      () => Promise<void>;
   /** Jamember: leave without ending the session. */
@@ -137,6 +138,7 @@ export function useJam(): JamContextValue {
 
 export function JamProvider({ children }: { children: React.ReactNode }) {
   const [role,               setRole]               = useState<JamRole>(null);
+  const [isLead,             setIsLead]             = useState(false);
   const [sessionCode,        setSessionCode]        = useState<string | null>(null);
   const [sessionId,          setSessionId]          = useState<string | null>(null);
   const [participantCount,   setParticipantCount]   = useState(0);
@@ -153,13 +155,15 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const currentUserIdRef    = useRef<string | null>(null);
   const guestTokenRef       = useRef<string | null>(null);
   const isGuestRef          = useRef<boolean>(false);
+  const isLeadRef           = useRef<boolean>(false);
   const songChangeHandlers  = useRef<Set<(song: SongRef) => void>>(new Set());
   const scrollSyncHandlers  = useRef<Set<(pos: number) => void>>(new Set());
   const lastScrollBroadcast = useRef(0);
 
   // Keep refs in sync so callbacks always see current values without stale closures
-  useEffect(() => { roleRef.current = role; }, [role]);
+  useEffect(() => { roleRef.current    = role; },   [role]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { isLeadRef.current  = isLead; }, [isLead]);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
@@ -343,9 +347,11 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     const initialQueue = queueRow ? dbRowsToQueueItems([queueRow]) : [];
 
-    isGuestRef.current = false;
+    isGuestRef.current  = false;
+    isLeadRef.current   = true;
     joinChannel(code, 'jamaneger', user.id, displayName);
     setRole('jamaneger');
+    setIsLead(true);
     setSessionCode(code);
     setSessionId(newSessionId);
     setQueue(initialQueue);
@@ -360,12 +366,16 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
   // joinSession (anyone joining by code — logged-in or guest)
   // ---------------------------------------------------------------------------
-  const joinSession = useCallback(async (code: string, nickname?: string): Promise<SongRef | null> => {
+  const joinSession = useCallback(async (
+    code: string,
+    nickname?: string,
+    preferredRole: 'jamaneger' | 'jamember' = 'jamember',
+  ): Promise<SongRef | null> => {
     const upper = code.toUpperCase().trim();
 
     const { data: session, error } = await supabase
       .from('jam_sessions')
-      .select('id, current_song_id, current_song_source, current_transpose, current_speed_index')
+      .select('id, host_user_id, current_song_id, current_song_source, current_transpose, current_speed_index')
       .eq('code', upper)
       .eq('is_active', true)
       .single();
@@ -378,17 +388,21 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     let resolvedRole:      'jamaneger' | 'jamember';
     let resolvedName:      string;
     let isGuest:           boolean;
+    let resolvedIsLead:    boolean;
 
     if (user) {
       // ── Logged-in path ──────────────────────────────────────────────────
       isGuest = false;
-      resolvedUserId = user.id;
-      resolvedName   = nickname ?? (user.user_metadata?.full_name ?? user.email ?? 'Jamember');
+      resolvedUserId  = user.id;
+      resolvedName    = nickname ?? (user.user_metadata?.full_name ?? user.email ?? 'Jamember');
+      // Host is always lead; others are lead only if they ARE the host
+      resolvedIsLead  = user.id === session.host_user_id;
 
       const { data: assignedRole } = await supabase.rpc('join_jam_session', {
-        p_session_id:   session.id,
-        p_user_id:      user.id,
-        p_display_name: resolvedName,
+        p_session_id:     session.id,
+        p_user_id:        user.id,
+        p_display_name:   resolvedName,
+        p_preferred_role: resolvedIsLead ? 'jamaneger' : preferredRole,
       }) as { data: 'jamaneger' | 'jamember' | null };
 
       resolvedRole = assignedRole ?? 'jamember';
@@ -403,6 +417,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       resolvedUserId = guestToken;
       resolvedName   = nickname ?? 'Guest';
       resolvedRole   = 'jamember';
+      resolvedIsLead = false;
 
       await supabase.rpc('join_jam_session_guest', {
         p_session_id:   session.id,
@@ -415,6 +430,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     currentUserIdRef.current = resolvedUserId;
     isGuestRef.current       = isGuest;
+    isLeadRef.current        = resolvedIsLead;
 
     // Fetch current queue
     const { data: queueRows } = await supabase
@@ -439,6 +455,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     joinChannel(upper, resolvedRole, resolvedUserId, resolvedName);
     setRole(resolvedRole);
+    setIsLead(resolvedIsLead);
     setSessionCode(upper);
     setSessionId(session.id);
     setQueue(currentQueue);
@@ -477,7 +494,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     supabase.removeChannel(channelRef.current);
     channelRef.current = null;
-    setRole(null); setSessionCode(null); setSessionId(null);
+    setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
   }, [sessionCode]);
@@ -506,7 +523,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     }
     guestTokenRef.current = null;
     isGuestRef.current    = false;
-    setRole(null); setSessionCode(null); setSessionId(null);
+    isLeadRef.current     = false;
+    setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
   }, []);
@@ -516,7 +534,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   // ---------------------------------------------------------------------------
 
   const broadcastSongChange = useCallback((song: SongRef) => {
-    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    if (!channelRef.current || !isLeadRef.current) return;
 
     channelRef.current.send({
       type: 'broadcast', event: 'song_change', payload: song,
@@ -531,7 +549,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const broadcastScroll = useCallback((position: number) => {
-    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    if (!channelRef.current || !isLeadRef.current) return;
     const now = Date.now();
     if (now - lastScrollBroadcast.current < 500) return;
     lastScrollBroadcast.current = now;
@@ -541,7 +559,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const broadcastTranspose = useCallback((newSemitones: number) => {
-    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    if (!channelRef.current || !isLeadRef.current) return;
     setSemitones(newSemitones);
     channelRef.current.send({
       type: 'broadcast', event: 'transpose_change', payload: { semitones: newSemitones },
@@ -554,7 +572,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const broadcastSpeed = useCallback((newSpeedIndex: number) => {
-    if (!channelRef.current || roleRef.current !== 'jamaneger') return;
+    if (!channelRef.current || !isLeadRef.current) return;
     setSpeedIndex(newSpeedIndex);
     channelRef.current.send({
       type: 'broadcast', event: 'speed_change', payload: { speedIndex: newSpeedIndex },
@@ -740,7 +758,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value: JamContextValue = {
-    role, sessionCode, sessionId, participantCount, isConnected,
+    role, isLead, sessionCode, sessionId, participantCount, isConnected,
     members, queue, currentQueueItemId, semitones, speedIndex,
     startSession, joinSession, endSession, leaveSession,
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed,

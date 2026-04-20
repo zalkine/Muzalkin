@@ -4,9 +4,8 @@
  * Handles direct-link joins (e.g. someone opens muzalkin.app/jam/ABC123).
  * Also used as the manual "Join Jam" entry screen when code is typed in.
  *
- * Guests (not logged in) get a random nickname pre-filled.
- * Logged-in users get their Google display name pre-filled.
- * The nickname is always editable before joining.
+ * Logged-in users: choose Jamanager or Jamember role + editable nickname.
+ * Guests (not logged in): always Jamember, random nickname pre-filled.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -31,23 +30,26 @@ export default function JoinJamPage() {
   const jam               = useJam();
   const isRTL             = i18n.language === 'he';
 
-  const [inputCode, setInputCode] = useState(urlCode?.toUpperCase() ?? '');
-  const [nickname,  setNickname]  = useState('');
-  const [status,    setStatus]    = useState<'idle' | 'joining' | 'error'>('idle');
-  const nicknameRef               = useRef<HTMLInputElement>(null);
+  const [inputCode,  setInputCode]  = useState(urlCode?.toUpperCase() ?? '');
+  const [nickname,   setNickname]   = useState('');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [status,     setStatus]     = useState<'idle' | 'joining' | 'error'>('idle');
+  const nicknameRef                 = useRef<HTMLInputElement>(null);
 
-  // Pre-fill nickname: Google name for logged-in users, random name for guests
+  // Pre-fill nickname + detect auth on mount
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
+        setIsLoggedIn(true);
         setNickname(user.user_metadata?.full_name ?? user.email ?? '');
       } else {
+        setIsLoggedIn(false);
         setNickname(randomGuestName());
       }
     });
   }, []);
 
-  // If code came from URL, focus the nickname field so user just hits Enter
+  // If code came from URL, focus the nickname field
   useEffect(() => {
     if (urlCode && nicknameRef.current) {
       nicknameRef.current.focus();
@@ -55,17 +57,17 @@ export default function JoinJamPage() {
     }
   }, [urlCode]);
 
-  async function handleJoin(code = inputCode) {
+  async function handleJoin(
+    code = inputCode,
+    preferredRole: 'jamaneger' | 'jamember' = 'jamember',
+  ) {
     const clean = code.toUpperCase().trim();
-    if (clean.length !== 6) { setStatus('error'); return; }
-    if (!nickname.trim())   { nicknameRef.current?.focus(); return; }
+    if (clean.length !== 6)  { setStatus('error'); return; }
+    if (!nickname.trim())    { nicknameRef.current?.focus(); return; }
 
     setStatus('joining');
-    const songRef = await jam.joinSession(clean, nickname.trim());
-    if (!songRef) {
-      setStatus('error');
-      return;
-    }
+    const songRef = await jam.joinSession(clean, nickname.trim(), preferredRole);
+    if (!songRef) { setStatus('error'); return; }
 
     if (songRef.songId) {
       navigate(`/song/${songRef.songId}`, { replace: true });
@@ -73,6 +75,8 @@ export default function JoinJamPage() {
       navigate('/search', { replace: true });
     }
   }
+
+  const canJoin = inputCode.length === 6 && nickname.trim().length > 0 && status !== 'joining';
 
   return (
     <div style={{
@@ -139,21 +143,52 @@ export default function JoinJamPage() {
         </p>
       )}
 
-      <button
-        onClick={() => handleJoin()}
-        disabled={status === 'joining' || inputCode.length !== 6 || !nickname.trim()}
-        style={{
-          marginTop: 20, width: '100%', maxWidth: 240, height: 48,
-          backgroundColor:
-            status === 'joining' || inputCode.length !== 6 || !nickname.trim()
-              ? '#aaa'
-              : 'var(--accent)',
-          color: '#fff', border: 'none', borderRadius: 10,
-          fontSize: 16, fontWeight: 700, cursor: 'pointer',
-        }}
-      >
-        {status === 'joining' ? t('loading') : t('jam_join_btn')}
-      </button>
+      {/* Role choice — logged-in users only; guests are always jamember */}
+      {isLoggedIn ? (
+        <div style={{ display: 'flex', gap: 10, marginTop: 20, width: '100%', maxWidth: 240 }}>
+          <button
+            onClick={() => handleJoin(inputCode, 'jamaneger')}
+            disabled={!canJoin}
+            style={{
+              flex: 1, height: 48,
+              backgroundColor: canJoin ? 'var(--accent)' : '#aaa',
+              color: '#fff', border: 'none', borderRadius: 10,
+              fontSize: 13, fontWeight: 700, cursor: canJoin ? 'pointer' : 'default',
+              lineHeight: 1.3,
+            }}
+          >
+            {status === 'joining' ? '…' : t('jam_join_as_manager')}
+          </button>
+          <button
+            onClick={() => handleJoin(inputCode, 'jamember')}
+            disabled={!canJoin}
+            style={{
+              flex: 1, height: 48,
+              backgroundColor: 'var(--surface)',
+              color: canJoin ? 'var(--accent)' : '#aaa',
+              border: `1px solid ${canJoin ? 'var(--accent)' : '#aaa'}`,
+              borderRadius: 10,
+              fontSize: 13, fontWeight: 700, cursor: canJoin ? 'pointer' : 'default',
+              lineHeight: 1.3,
+            }}
+          >
+            {status === 'joining' ? '…' : t('jam_join_as_jamember')}
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => handleJoin()}
+          disabled={!canJoin}
+          style={{
+            marginTop: 20, width: '100%', maxWidth: 240, height: 48,
+            backgroundColor: canJoin ? 'var(--accent)' : '#aaa',
+            color: '#fff', border: 'none', borderRadius: 10,
+            fontSize: 16, fontWeight: 700, cursor: canJoin ? 'pointer' : 'default',
+          }}
+        >
+          {status === 'joining' ? t('loading') : t('jam_join_btn')}
+        </button>
+      )}
 
       <button
         onClick={() => navigate(-1)}
