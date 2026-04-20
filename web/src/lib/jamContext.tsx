@@ -49,9 +49,10 @@ export type QueueItem = {
 };
 
 export type JamMember = {
-  userId:      string;
+  userId:      string;   // auth user_id for logged-in users, guest_token for guests
   displayName: string;
   role:        'jamaneger' | 'jamember';
+  isGuest:     boolean;
 };
 
 export type JamContextValue = {
@@ -69,7 +70,7 @@ export type JamContextValue = {
   /** Jamaneger: create a new session. Returns the 6-char code. */
   startSession:    (song: SongRef) => Promise<string | null>;
   /** Anyone: join an existing session by code. Returns the current song if found. */
-  joinSession:     (code: string) => Promise<SongRef | null>;
+  joinSession:     (code: string, nickname?: string) => Promise<SongRef | null>;
   /** Jamaneger: end the session for everyone. */
   endSession:      () => Promise<void>;
   /** Jamember: leave without ending the session. */
@@ -150,6 +151,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const sessionIdRef        = useRef<string | null>(null);
   const roleRef             = useRef<JamRole>(null);
   const currentUserIdRef    = useRef<string | null>(null);
+  const guestTokenRef       = useRef<string | null>(null);
+  const isGuestRef          = useRef<boolean>(false);
   const songChangeHandlers  = useRef<Set<(song: SongRef) => void>>(new Set());
   const scrollSyncHandlers  = useRef<Set<(pos: number) => void>>(new Set());
   const lastScrollBroadcast = useRef(0);
@@ -340,6 +343,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     const initialQueue = queueRow ? dbRowsToQueueItems([queueRow]) : [];
 
+    isGuestRef.current = false;
     joinChannel(code, 'jamaneger', user.id, displayName);
     setRole('jamaneger');
     setSessionCode(code);
@@ -348,20 +352,17 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setCurrentQueueItemId(queueRow?.id ?? null);
     setSemitones(0);
     setSpeedIndex(1);
-    setMembers([{ userId: user.id, displayName, role: 'jamaneger' }]);
+    setMembers([{ userId: user.id, displayName, role: 'jamaneger', isGuest: false }]);
 
     return code;
   }, [joinChannel]);
 
   // ---------------------------------------------------------------------------
-  // joinSession (anyone joining by code)
+  // joinSession (anyone joining by code — logged-in or guest)
   // ---------------------------------------------------------------------------
-  const joinSession = useCallback(async (code: string): Promise<SongRef | null> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    currentUserIdRef.current = user.id;
-
+  const joinSession = useCallback(async (code: string, nickname?: string): Promise<SongRef | null> => {
     const upper = code.toUpperCase().trim();
+
     const { data: session, error } = await supabase
       .from('jam_sessions')
       .select('id, current_song_id, current_song_source, current_transpose, current_speed_index')
@@ -371,16 +372,49 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     if (error || !session) return null;
 
-    const displayName = user.user_metadata?.full_name ?? user.email ?? 'Jamember';
+    const { data: { user } } = await supabase.auth.getUser();
 
-    // Atomically determine role (first joiner → jamaneger, rest → jamember)
-    const { data: assignedRole } = await supabase.rpc('join_jam_session', {
-      p_session_id:   session.id,
-      p_user_id:      user.id,
-      p_display_name: displayName,
-    }) as { data: 'jamaneger' | 'jamember' | null };
+    let resolvedUserId:    string;
+    let resolvedRole:      'jamaneger' | 'jamember';
+    let resolvedName:      string;
+    let isGuest:           boolean;
 
-    const role = assignedRole ?? 'jamember';
+    if (user) {
+      // ── Logged-in path ──────────────────────────────────────────────────
+      isGuest = false;
+      resolvedUserId = user.id;
+      resolvedName   = nickname ?? (user.user_metadata?.full_name ?? user.email ?? 'Jamember');
+
+      const { data: assignedRole } = await supabase.rpc('join_jam_session', {
+        p_session_id:   session.id,
+        p_user_id:      user.id,
+        p_display_name: resolvedName,
+      }) as { data: 'jamaneger' | 'jamember' | null };
+
+      resolvedRole = assignedRole ?? 'jamember';
+    } else {
+      // ── Guest path ───────────────────────────────────────────────────────
+      isGuest = true;
+      let guestToken = localStorage.getItem('muzalkin_guest_token');
+      if (!guestToken) {
+        guestToken = crypto.randomUUID();
+        localStorage.setItem('muzalkin_guest_token', guestToken);
+      }
+      resolvedUserId = guestToken;
+      resolvedName   = nickname ?? 'Guest';
+      resolvedRole   = 'jamember';
+
+      await supabase.rpc('join_jam_session_guest', {
+        p_session_id:   session.id,
+        p_guest_token:  guestToken,
+        p_display_name: resolvedName,
+      });
+
+      guestTokenRef.current = guestToken;
+    }
+
+    currentUserIdRef.current = resolvedUserId;
+    isGuestRef.current       = isGuest;
 
     // Fetch current queue
     const { data: queueRows } = await supabase
@@ -389,21 +423,22 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       .eq('session_id', session.id)
       .order('position', { ascending: true });
 
-    // Fetch current member list
+    // Fetch current member list (includes guest_token for guest rows)
     const { data: memberRows } = await supabase
       .from('jam_members')
-      .select('user_id, display_name, role')
+      .select('user_id, guest_token, display_name, role')
       .eq('session_id', session.id);
 
     const currentQueue = dbRowsToQueueItems(queueRows ?? []);
     const currentMembers: JamMember[] = (memberRows ?? []).map(m => ({
-      userId:      m.user_id as string,
+      userId:      (m.user_id ?? m.guest_token) as string,
       displayName: m.display_name as string,
       role:        m.role as 'jamaneger' | 'jamember',
+      isGuest:     !m.user_id,
     }));
 
-    joinChannel(upper, role, user.id, displayName);
-    setRole(role);
+    joinChannel(upper, resolvedRole, resolvedUserId, resolvedName);
+    setRole(resolvedRole);
     setSessionCode(upper);
     setSessionId(session.id);
     setQueue(currentQueue);
@@ -411,7 +446,6 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setSemitones(session.current_transpose ?? 0);
     setSpeedIndex(session.current_speed_index ?? 1);
 
-    // Find which queue item matches the current song
     const currentItem = currentQueue.find(q => q.songId === session.current_song_id);
     setCurrentQueueItemId(currentItem?.id ?? null);
 
@@ -456,14 +490,22 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
-    // Remove from DB so member list updates for others
-    if (sessionIdRef.current && currentUserIdRef.current) {
-      supabase.from('jam_members')
-        .delete()
-        .eq('session_id', sessionIdRef.current)
-        .eq('user_id', currentUserIdRef.current)
-        .then(() => {});
+    if (sessionIdRef.current) {
+      if (isGuestRef.current && guestTokenRef.current) {
+        supabase.rpc('leave_jam_guest', {
+          p_session_id:  sessionIdRef.current,
+          p_guest_token: guestTokenRef.current,
+        }).then(() => {});
+      } else if (currentUserIdRef.current) {
+        supabase.from('jam_members')
+          .delete()
+          .eq('session_id', sessionIdRef.current)
+          .eq('user_id', currentUserIdRef.current)
+          .then(() => {});
+      }
     }
+    guestTokenRef.current = null;
+    isGuestRef.current    = false;
     setRole(null); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
@@ -627,11 +669,22 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    await supabase.rpc('kick_jam_member', {
-      p_session_id:         sessionIdRef.current,
-      p_target_user_id:     userId,
-      p_requesting_user_id: user.id,
-    });
+    const target = members.find(m => m.userId === userId);
+    if (!target) return;
+
+    if (target.isGuest) {
+      await supabase.rpc('kick_jam_guest', {
+        p_session_id:         sessionIdRef.current,
+        p_guest_token:        userId,
+        p_requesting_user_id: user.id,
+      });
+    } else {
+      await supabase.rpc('kick_jam_member', {
+        p_session_id:         sessionIdRef.current,
+        p_target_user_id:     userId,
+        p_requesting_user_id: user.id,
+      });
+    }
 
     channelRef.current?.send({
       type: 'broadcast', event: 'remove_participant', payload: { userId },

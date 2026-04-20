@@ -35,6 +35,18 @@ export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props)
     });
   };
 
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: t('jam_share_title'),
+        text:  t('jam_share_text', { code: jam.sessionCode }),
+        url:   shareUrl,
+      }).catch(() => {});
+    } else {
+      handleCopy();
+    }
+  };
+
   const handleLeaveOrEnd = async () => {
     setLeaving(true);
     if (isJamaneger) {
@@ -70,6 +82,11 @@ export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props)
         <button onClick={handleCopy} style={chipBtn}>
           {copied ? '✓' : t('jam_copy')}
         </button>
+        {isJamaneger && (
+          <button onClick={handleShare} style={chipBtn}>
+            {t('share')}
+          </button>
+        )}
       </div>
 
       {/* ── Centre: now-playing + next ── */}

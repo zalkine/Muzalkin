@@ -96,7 +96,7 @@ export default function JamMemberList({ isOpen, onClose, isRTL = false }: Props)
                     fontSize:        16,
                     flexShrink:      0,
                   }}>
-                    {isMgr ? '🎸' : '🎵'}
+                    {isMgr ? '🎸' : member.isGuest ? '👤' : '🎵'}
                   </div>
 
                   {/* Name + role badge */}
@@ -105,20 +105,27 @@ export default function JamMemberList({ isOpen, onClose, isRTL = false }: Props)
                       {member.displayName || '—'}
                     </div>
                     <div style={{ fontSize: 11, color: isMgr ? 'var(--accent)' : 'var(--text3)', marginTop: 1 }}>
-                      {isMgr ? t('jam_jamaneger_label') : t('jam_jamember_label')}
+                      {isMgr
+                        ? t('jam_jamaneger_label')
+                        : member.isGuest
+                          ? t('jam_guest_label')
+                          : t('jam_jamember_label')}
                     </div>
                   </div>
 
                   {/* Jamaneger action buttons for jamembers */}
                   {isJamaneger && !isMgr && (
                     <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                      <button
-                        onClick={() => handlePromote(member)}
-                        title={t('jam_promote_member')}
-                        style={actionBtn}
-                      >
-                        ↑ {t('jam_promote_member')}
-                      </button>
+                      {/* Guests cannot be promoted — they have no account */}
+                      {!member.isGuest && (
+                        <button
+                          onClick={() => handlePromote(member)}
+                          title={t('jam_promote_member')}
+                          style={actionBtn}
+                        >
+                          ↑ {t('jam_promote_member')}
+                        </button>
+                      )}
                       <button
                         onClick={() => handleKick(member)}
                         title={t('jam_remove_member')}
