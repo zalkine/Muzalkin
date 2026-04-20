@@ -333,15 +333,17 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       };
       const { data, error } = await supabase.from('jam_sessions').insert(sessionRow).select('id').single();
       if (!error && data) { newSessionId = data.id; break; }
+      console.error('[startSession] insert attempt', attempt + 1, 'failed:', error);
       code = '';
     }
     if (!code || !newSessionId) return null;
 
     // Register creator as first jamaneger via DB function
     await supabase.rpc('join_jam_session', {
-      p_session_id:   newSessionId,
-      p_user_id:      user.id,
-      p_display_name: displayName,
+      p_session_id:     newSessionId,
+      p_user_id:        user.id,
+      p_display_name:   displayName,
+      p_preferred_role: 'jamaneger',
     });
 
     // Seed queue with the opening song (only when one is provided)
