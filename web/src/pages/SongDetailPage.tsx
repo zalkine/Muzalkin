@@ -599,91 +599,108 @@ export default function SongDetailPage() {
   const displayData = normalizeChordData(applyTranspose(song.chords_data, semitones), isRTL);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: jam.sessionCode ? 'color-mix(in srgb, var(--accent) 4%, var(--bg))' : 'var(--bg)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
 
-      {/* ── Jam environment banner (shown only when in a session) ── */}
-      {jam.sessionCode && (
+      {/* ── JAM HEADER — compact bar shown to everyone when in a session (not in edit mode) ── */}
+      {jam.sessionCode && !editMode ? (
         <div style={{
-          height: 3,
-          background: 'var(--accent)',
+          display: 'flex',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          padding: '10px 12px',
+          backgroundColor: 'var(--accent)',
+          color: '#fff',
+          gap: 10,
           flexShrink: 0,
-        }} />
+          direction: isRTL ? 'rtl' : 'ltr',
+        }}>
+          {/* Song info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {song.song_title}
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.85 }}>
+              {song.artist} · 🎸 {jam.sessionCode}
+            </div>
+          </div>
+          {/* Jamanager controls */}
+          {jam.role === 'jamaneger' && (
+            <>
+              <button onClick={() => jam.playNext()} style={jamChipBtn} title="Next song">⏭</button>
+              <button onClick={() => navigate('/jam', { state: { fromJam: true } })} style={jamChipBtn}>
+                {t('jam_queue_title')}
+              </button>
+            </>
+          )}
+          <button
+            onClick={async () => {
+              if (jam.role === 'jamaneger') await jam.endSession();
+              else jam.leaveSession();
+              navigate('/');
+            }}
+            style={{ ...jamChipBtn, fontWeight: 700 }}
+          >
+            {jam.role === 'jamaneger' ? t('jam_end') : t('jam_leave')}
+          </button>
+        </div>
+      ) : (
+        /* ── NORMAL HEADER (no session, or in edit mode) ── */
+        <div style={{
+          display: 'flex',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          padding: '10px 12px',
+          borderBottom: '1px solid var(--border)',
+          gap: 8,
+          backgroundColor: 'var(--bg)',
+        }}>
+          <button onClick={() => { if (editMode) cancelEdit(); else navigate(-1); }}
+            style={{ ...iconBtnStyle, fontSize: 22, color: 'var(--accent)' }}>
+            {editMode ? '✕' : (isRTL ? '→' : '←')}
+          </button>
+
+          <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{song.song_title}</div>
+            <div style={{ fontSize: 12, color: 'var(--text2)' }}>{song.artist}</div>
+          </div>
+
+          {savedId && !editMode && (
+            <button onClick={enterEdit} style={{ ...toolBtnStyle, borderColor: 'var(--border)', color: 'var(--text2)' }}>
+              {t('edit_chords')}
+            </button>
+          )}
+          {!editMode && jam.role === null && session && (
+            <button
+              onClick={() => setShowJamModal(true)}
+              title={t('jam_start_title')}
+              style={{ ...toolBtnStyle, borderColor: 'var(--accent)', fontSize: 18, padding: '5px 8px' }}
+            >
+              🎸
+            </button>
+          )}
+          {!editMode && (
+            <button
+              onClick={openPlaylistModal}
+              disabled={saving}
+              style={{ ...saveBtnStyle, backgroundColor: saving ? '#aaa' : 'var(--accent)' }}
+            >
+              {saving ? t('saving') : t('save_song')}
+            </button>
+          )}
+          {editMode && (
+            <button
+              onClick={saveEdit}
+              disabled={savingEdit}
+              style={{ ...saveBtnStyle, backgroundColor: savingEdit ? '#aaa' : 'var(--accent)' }}
+            >
+              {savingEdit ? '…' : t('edit_save')}
+            </button>
+          )}
+        </div>
       )}
 
-      {/* ── Header ── */}
-      <div style={{
-        display: 'flex',
-        flexDirection: isRTL ? 'row-reverse' : 'row',
-        alignItems: 'center',
-        padding: '10px 12px',
-        borderBottom: '1px solid var(--border)',
-        gap: 8,
-        backgroundColor: jam.sessionCode ? 'color-mix(in srgb, var(--accent) 6%, var(--bg))' : 'var(--bg)',
-      }}>
-        <button onClick={() => { if (editMode) cancelEdit(); else navigate(-1); }}
-          style={{ ...iconBtnStyle, fontSize: 22, color: 'var(--accent)' }}>
-          {editMode ? '✕' : (isRTL ? '→' : '←')}
-        </button>
-
-        <div style={{ flex: 1, textAlign: isRTL ? 'right' : 'left' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>{song.song_title}</div>
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>{song.artist}</div>
-        </div>
-
-        {/* Edit button — only when song is saved */}
-        {savedId && !editMode && (
-          <button onClick={enterEdit} style={{ ...toolBtnStyle, borderColor: 'var(--border)', color: 'var(--text2)' }}>
-            {t('edit_chords')}
-          </button>
-        )}
-
-        {/* Start Jam button (no session) or Back to Jam link (in session) */}
-        {!editMode && jam.role === null && session && (
-          <button
-            onClick={() => setShowJamModal(true)}
-            title={t('jam_start_title')}
-            style={{ ...toolBtnStyle, borderColor: 'var(--accent)', fontSize: 18, padding: '5px 8px' }}
-          >
-            🎸
-          </button>
-        )}
-        {!editMode && jam.sessionCode && (
-          <button
-            onClick={() => navigate('/jam', { state: { fromJam: true } })}
-            style={{ ...toolBtnStyle, borderColor: 'var(--accent)', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: '5px 10px', whiteSpace: 'nowrap' }}
-          >
-            🎸 {t('jam_back_to_session')}
-          </button>
-        )}
-
-        {/* Single save/playlist button */}
-        {!editMode && (
-          <button
-            onClick={openPlaylistModal}
-            disabled={saving}
-            style={{
-              ...saveBtnStyle,
-              backgroundColor: saving ? '#aaa' : 'var(--accent)',
-            }}
-          >
-            {saving ? t('saving') : t('save_song')}
-          </button>
-        )}
-
-        {/* Save edits button */}
-        {editMode && (
-          <button
-            onClick={saveEdit}
-            disabled={savingEdit}
-            style={{ ...saveBtnStyle, backgroundColor: savingEdit ? '#aaa' : 'var(--accent)' }}
-          >
-            {savingEdit ? '…' : t('edit_save')}
-          </button>
-        )}
-      </div>
-
-      {/* ── Toolbar (hidden in edit mode) ── */}
-      {!editMode && (
+      {/* ── Toolbar — hidden in edit mode and hidden for jamembers in session ── */}
+      {!editMode && (!jam.sessionCode || jam.role === 'jamaneger') && (
         <div style={{
           display: 'flex',
           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -709,7 +726,7 @@ export default function SongDetailPage() {
             >A+</button>
           </div>
 
-          {/* Transpose — always shown outside a session; lead-only inside a session */}
+          {/* Transpose — lead-only in session (broadcasts to all); always shown outside session */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             {(!jam.sessionCode || jam.isLead) && (
               <button style={toolBtnStyle} onClick={() => {
@@ -741,28 +758,24 @@ export default function SongDetailPage() {
             )}
           </div>
 
-          {/* Scroll + share + playlist */}
+          {/* Scroll speed + toggle — jamanagers only in session */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {(!jam.sessionCode || jam.isLead) && (
-              <button style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
-                onClick={() => { adjustSpeed(-1); if (jam.isLead) jam.broadcastSpeed(Math.max(0, speedIndex - 1)); }}
-                disabled={speedIndex === 0}>−</button>
-            )}
+            <button style={{ ...toolBtnStyle, opacity: speedIndex === 0 ? 0.4 : 1 }}
+              onClick={() => { adjustSpeed(-1); if (jam.isLead) jam.broadcastSpeed(Math.max(0, speedIndex - 1)); }}
+              disabled={speedIndex === 0}>−</button>
             <span style={{ fontSize: 12, fontWeight: 700, minWidth: 32, textAlign: 'center', color: 'var(--text)' }}>
               {`×${SCROLL_SPEEDS[speedIndex].toFixed(1)}`}
             </span>
-            {(!jam.sessionCode || jam.isLead) && (
-              <button style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
-                onClick={() => { adjustSpeed(1); if (jam.isLead) jam.broadcastSpeed(Math.min(SCROLL_SPEEDS.length - 1, speedIndex + 1)); }}
-                disabled={speedIndex === SCROLL_SPEEDS.length - 1}>+</button>
-            )}
+            <button style={{ ...toolBtnStyle, opacity: speedIndex === SCROLL_SPEEDS.length - 1 ? 0.4 : 1 }}
+              onClick={() => { adjustSpeed(1); if (jam.isLead) jam.broadcastSpeed(Math.min(SCROLL_SPEEDS.length - 1, speedIndex + 1)); }}
+              disabled={speedIndex === SCROLL_SPEEDS.length - 1}>+</button>
             <button
               style={{ ...toolBtnStyle, backgroundColor: scrolling ? 'var(--accent)' : 'var(--bg)', color: scrolling ? '#fff' : 'var(--accent)' }}
               onClick={toggleScroll}
             >
               {scrolling ? t('auto_scroll_stop') : t('auto_scroll_start')}
             </button>
-            <button style={toolBtnStyle} onClick={handleShare}>{t('share')}</button>
+            {!jam.sessionCode && <button style={toolBtnStyle} onClick={handleShare}>{t('share')}</button>}
             {song?.chords_data?.some((l: { type: string }) => l.type === 'tab') && (
               <button
                 style={{ ...toolBtnStyle, backgroundColor: showTabs ? 'var(--accent)' : 'var(--bg)', color: showTabs ? '#fff' : 'var(--accent)' }}
@@ -920,6 +933,19 @@ const toolBtnStyle: React.CSSProperties = {
   paddingInline: 9, paddingBlock: 5, borderRadius: 6,
   border: '1px solid var(--accent)', backgroundColor: 'var(--bg)',
   color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+};
+
+const jamChipBtn: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.2)',
+  border: 'none',
+  borderRadius: 4,
+  color: '#fff',
+  fontSize: 12,
+  fontWeight: 600,
+  padding: '4px 10px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
 };
 
 const overlayStyle: React.CSSProperties = {

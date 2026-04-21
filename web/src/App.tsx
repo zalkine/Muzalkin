@@ -28,6 +28,7 @@ function AppShell() {
   const showNav   = location.pathname !== '/';
   const isRTL     = document.documentElement.dir === 'rtl';
   const isJamPage = location.pathname === '/jam';
+  const isSongPage = location.pathname.startsWith('/song/');
   const jam       = useJam();
 
   const [isQueueOpen,   setIsQueueOpen]   = useState(false);
@@ -42,11 +43,10 @@ function AppShell() {
     }
   }, [jam.sessionCode, jam.role, location.pathname, navigate]);
 
-  // Global song-change follower: all non-lead users follow the lead's song pick
-  // regardless of which page they are currently on.
-  // Jamanagers can still browse freely between picks — this fires on the next pick.
+  // Global song-change follower: ALL users in a session follow song changes.
+  // This fires for non-leads receiving broadcasts AND for the lead calling selectSong/playNext.
   useEffect(() => {
-    if (!jam.sessionCode || jam.isLead) return;
+    if (!jam.sessionCode) return;
     return jam.onSongChange((ref) => {
       if (!ref.songId) {
         navigate('/jam', { replace: true });
@@ -54,7 +54,7 @@ function AppShell() {
         navigate(`/song/${ref.songId}`, { replace: true });
       }
     });
-  }, [jam.sessionCode, jam.isLead, navigate, jam]);
+  }, [jam.sessionCode, navigate, jam]);
 
   return (
     <div className="app-root">
@@ -68,8 +68,8 @@ function AppShell() {
           boxSizing: 'border-box',
         }} />
       )}
-      {/* Jam session status bar — hidden on /jam itself (JamPage is the hub) */}
-      {!isJamPage && (
+      {/* Jam session status bar — hidden on /jam and on song pages (song header acts as jam bar there) */}
+      {!isJamPage && !(jam.sessionCode && isSongPage) && (
         <JamBanner
           onOpenQueue={() => setIsQueueOpen(true)}
           onOpenMembers={() => setIsMembersOpen(true)}
