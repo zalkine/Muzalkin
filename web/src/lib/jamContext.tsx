@@ -841,39 +841,24 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     // Already in a session — nothing to restore
     if (sessionIdRef.current) return { found: false, song: null };
 
-    let codeToTry: string | null = localStorage.getItem('muzalkin_jam_code');
-
-    if (!codeToTry) {
-      // Fallback: logged-in users — check DB for an active membership
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: memberRows } = await supabase
-          .from('jam_members')
-          .select('session_id')
-          .eq('user_id', user.id)
-          .limit(5);
-        if (memberRows?.length) {
-          const sessionIds = memberRows.map(r => r.session_id as string);
-          const { data: activeSession } = await supabase
-            .from('jam_sessions')
-            .select('code')
-            .in('id', sessionIds)
-            .eq('is_active', true)
-            .limit(1)
-            .single();
-          if (activeSession) codeToTry = (activeSession as { code: string }).code;
-        }
-      }
-    }
-
+    const codeToTry = localStorage.getItem('muzalkin_jam_code');
     if (!codeToTry) return { found: false, song: null };
 
-    const song = await joinSession(codeToTry);
-    if (!sessionIdRef.current) {
-      // Session no longer active or code invalid
+    // Verify the session is still active before trying to rejoin
+    const { data: session } = await supabase
+      .from('jam_sessions')
+      .select('id')
+      .eq('code', codeToTry)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (!session) {
+      // Session ended or code is stale — wipe it
       localStorage.removeItem('muzalkin_jam_code');
       return { found: false, song: null };
     }
+
+    const song = await joinSession(codeToTry);
     return { found: true, song };
   }, [joinSession]);
 
