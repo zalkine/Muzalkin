@@ -14,7 +14,7 @@ USING (
     SELECT 1
     FROM   jam_queue   jq
     JOIN   jam_sessions js ON js.id = jq.session_id
-    WHERE  jq.song_id   = songs.id
+    WHERE  jq.song_id::uuid = songs.id
       AND  js.is_active = true
   )
 );
