@@ -311,6 +311,16 @@ export default function SongDetailPage() {
     };
   }, []);
 
+  // Stop auto-scroll and reset to top whenever the song changes (id param changes)
+  useEffect(() => {
+    if (scrollTimer.current) { clearInterval(scrollTimer.current); scrollTimer.current = null; }
+    setScrolling(false);
+    wakeLockRef.current?.release();
+    wakeLockRef.current = null;
+    scrollOffset.current = 0;
+    if (scrollAreaRef.current) scrollAreaRef.current.scrollTo({ top: 0, behavior: 'auto' });
+  }, [id]);
+
   // ---------------------------------------------------------------------------
   // Jam session: lead broadcasts; everyone else follows the lead's screen
   // ---------------------------------------------------------------------------

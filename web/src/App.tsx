@@ -34,6 +34,16 @@ function AppShell() {
   const [isQueueOpen,   setIsQueueOpen]   = useState(false);
   const [isMembersOpen, setIsMembersOpen] = useState(false);
 
+  // On mount: restore any previous session (handles page refresh / app reopen)
+  useEffect(() => {
+    jam.restoreSession().then(({ found, song }) => {
+      if (!found) return;
+      if (song?.songId) navigate(`/song/${song.songId}`, { replace: true });
+      else navigate('/jam', { replace: true });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Route guard: jamembers in session can only access /jam and /song/:id
   useEffect(() => {
     if (!jam.sessionCode || jam.role !== 'jamember') return;

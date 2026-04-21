@@ -114,6 +114,8 @@ export type JamContextValue = {
   takeLead:        () => Promise<void>;
   /** Anyone: add multiple songs to the queue in one batch. */
   addManyToQueue:  (songs: SongRef[]) => Promise<void>;
+  /** Restore a previous session on app load (handles page refresh / reconnect). */
+  restoreSession:  () => Promise<{ found: boolean; song: SongRef | null }>;
 };
 
 // ---------------------------------------------------------------------------
@@ -242,6 +244,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     });
 
     channel.on('broadcast', { event: 'session_end' }, () => {
+      localStorage.removeItem('muzalkin_jam_code');
       setRole(null); setSessionCode(null); setSessionId(null);
       setIsConnected(false); setParticipantCount(0);
       setMembers([]); setQueue([]); setCurrentQueueItemId(null);
@@ -293,6 +296,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     channel.on('broadcast', { event: 'remove_participant' }, ({ payload }: { payload: { userId: string } }) => {
       if (payload.userId === currentUserIdRef.current) {
         // This user was kicked — clean up
+        localStorage.removeItem('muzalkin_jam_code');
         setRole(null); setSessionCode(null); setSessionId(null);
         setIsConnected(false); setParticipantCount(0);
         setMembers([]); setQueue([]); setCurrentQueueItemId(null);
@@ -385,6 +389,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setSpeedIndex(1);
     setMembers([{ userId: user.id, displayName, role: 'jamaneger', isGuest: false }]);
 
+    localStorage.setItem('muzalkin_jam_code', code);
     return code;
   }, [joinChannel]);
 
@@ -492,6 +497,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     const currentItem = currentQueue.find(q => q.songId === session.current_song_id);
     setCurrentQueueItemId(currentItem?.id ?? null);
 
+    localStorage.setItem('muzalkin_jam_code', upper);
+
     if (session.current_song_id) {
       return {
         songId: session.current_song_id,
@@ -520,6 +527,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     supabase.removeChannel(channelRef.current);
     channelRef.current = null;
+    localStorage.removeItem('muzalkin_jam_code');
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
@@ -550,6 +558,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     guestTokenRef.current = null;
     isGuestRef.current    = false;
     isLeadRef.current     = false;
+    localStorage.removeItem('muzalkin_jam_code');
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
@@ -691,6 +700,11 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       payload: { ...songRef, queueItemId },
     });
 
+    // Reset scroll to top for all participants when changing songs
+    channelRef.current?.send({
+      type: 'broadcast', event: 'scroll_sync', payload: { position: 0 },
+    });
+
     // Also update DB current song
     if (sessionIdRef.current) {
       supabase.from('jam_sessions').update({
@@ -820,6 +834,50 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   }, [queue, broadcastQueueUpdate]);
 
   // ---------------------------------------------------------------------------
+  // restoreSession — called on app mount to reconnect after refresh / app close
+  // ---------------------------------------------------------------------------
+
+  const restoreSession = useCallback(async (): Promise<{ found: boolean; song: SongRef | null }> => {
+    // Already in a session — nothing to restore
+    if (sessionIdRef.current) return { found: false, song: null };
+
+    let codeToTry: string | null = localStorage.getItem('muzalkin_jam_code');
+
+    if (!codeToTry) {
+      // Fallback: logged-in users — check DB for an active membership
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: memberRows } = await supabase
+          .from('jam_members')
+          .select('session_id')
+          .eq('user_id', user.id)
+          .limit(5);
+        if (memberRows?.length) {
+          const sessionIds = memberRows.map(r => r.session_id as string);
+          const { data: activeSession } = await supabase
+            .from('jam_sessions')
+            .select('code')
+            .in('id', sessionIds)
+            .eq('is_active', true)
+            .limit(1)
+            .single();
+          if (activeSession) codeToTry = (activeSession as { code: string }).code;
+        }
+      }
+    }
+
+    if (!codeToTry) return { found: false, song: null };
+
+    const song = await joinSession(codeToTry);
+    if (!sessionIdRef.current) {
+      // Session no longer active or code invalid
+      localStorage.removeItem('muzalkin_jam_code');
+      return { found: false, song: null };
+    }
+    return { found: true, song };
+  }, [joinSession]);
+
+  // ---------------------------------------------------------------------------
   // Subscription helpers
   // ---------------------------------------------------------------------------
 
@@ -852,7 +910,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed, broadcastFontSize,
     onSongChange, onScrollSync, onFontSizeSync,
     addToQueue, removeFromQueue, reorderQueue, selectSong, playNext,
-    kickMember, promoteMember, takeLead, addManyToQueue,
+    kickMember, promoteMember, takeLead, addManyToQueue, restoreSession,
   };
 
   return <JamContext.Provider value={value}>{children}</JamContext.Provider>;
