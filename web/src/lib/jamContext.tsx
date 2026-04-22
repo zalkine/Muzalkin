@@ -71,6 +71,8 @@ export type JamContextValue = {
   onlineUserIds:      Set<string>;
   /** False when we know the lead is disconnected (presence synced but lead absent). */
   isLeadOnline:       boolean;
+  /** Timestamp (ms) when all managers disappeared from presence; null when a manager is present. */
+  noManagerSince:     number | null;
 
   /** Jamaneger: create a new session. Returns the 6-char code. Optionally seeds queue with opening song. */
   startSession:    (song?: SongRef) => Promise<string | null>;
@@ -161,6 +163,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const [queue,              setQueue]              = useState<QueueItem[]>([]);
   const [onlineUserIds,      setOnlineUserIds]      = useState<Set<string>>(new Set());
   const [leadUserId,         setLeadUserId]         = useState<string | null>(null);
+  const [noManagerSince,     setNoManagerSince]     = useState<number | null>(null);
   const [currentQueueItemId, setCurrentQueueItemId] = useState<string | null>(null);
   const [semitones,          setSemitones]          = useState(0);
   const [speedIndex,         setSpeedIndex]         = useState(1);
@@ -172,15 +175,18 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const guestTokenRef       = useRef<string | null>(null);
   const isGuestRef          = useRef<boolean>(false);
   const isLeadRef           = useRef<boolean>(false);
+  const leadUserIdRef       = useRef<string | null>(null);
+  const abandonedTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const songChangeHandlers  = useRef<Set<(song: SongRef) => void>>(new Set());
   const scrollSyncHandlers  = useRef<Set<(pos: number) => void>>(new Set());
   const fontSizeHandlers    = useRef<Set<(size: number) => void>>(new Set());
   const lastScrollBroadcast = useRef(0);
 
   // Keep refs in sync so callbacks always see current values without stale closures
-  useEffect(() => { roleRef.current    = role; },   [role]);
+  useEffect(() => { roleRef.current      = role; },      [role]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
-  useEffect(() => { isLeadRef.current  = isLead; }, [isLead]);
+  useEffect(() => { isLeadRef.current    = isLead; },    [isLead]);
+  useEffect(() => { leadUserIdRef.current = leadUserId; }, [leadUserId]);
 
   // ---------------------------------------------------------------------------
   // Internal helpers
@@ -229,13 +235,79 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       config: { presence: { key: userId } },
     });
 
-    // Presence: track connected users and count
+    // Presence: track connected users, manage abandoned-session timer
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
-      const entries = Object.values(state).flat() as Array<{ userId: string }>;
+      const entries = Object.values(state).flat() as Array<{ userId: string; role: string }>;
       const online = new Set(entries.map(p => p.userId));
       setOnlineUserIds(online);
       setParticipantCount(online.size);
+
+      const hasMgr = entries.some(p => p.role === 'jamaneger');
+      if (hasMgr) {
+        // A manager is connected — cancel any running abandoned timer
+        if (abandonedTimerRef.current) {
+          clearTimeout(abandonedTimerRef.current);
+          abandonedTimerRef.current = null;
+        }
+        setNoManagerSince(null);
+      } else if (sessionIdRef.current && !abandonedTimerRef.current) {
+        // No managers and no timer yet — start the 2-minute grace period
+        const since = Date.now();
+        setNoManagerSince(since);
+        abandonedTimerRef.current = setTimeout(async () => {
+          abandonedTimerRef.current = null;
+          if (!sessionIdRef.current) return;
+          // Close in DB
+          await supabase.rpc('close_jam_session_if_abandoned', { p_session_id: sessionIdRef.current });
+          // Notify remaining connected members
+          if (channelRef.current) {
+            await channelRef.current.send({ type: 'broadcast', event: 'session_end', payload: {} });
+            supabase.removeChannel(channelRef.current);
+            channelRef.current = null;
+          }
+          localStorage.removeItem('muzalkin_jam_code');
+          setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
+          setIsConnected(false); setParticipantCount(0);
+          setMembers([]); setQueue([]); setCurrentQueueItemId(null);
+          setOnlineUserIds(new Set()); setLeadUserId(null); setNoManagerSince(null);
+          leadUserIdRef.current = null;
+          songChangeHandlers.current.forEach(h =>
+            h({ songId: '', source: 'cached', title: '', artist: '' }),
+          );
+        }, 2 * 60 * 1000);
+      }
+    });
+
+    // Auto-promote: when the lead disconnects, the next manager (by userId sort) takes over
+    channel.on('presence', { event: 'leave' }, ({ leftPresences }: { leftPresences: Array<Record<string, unknown>> }) => {
+      const left = leftPresences as Array<{ userId: string; role: string }>;
+      // Only act if the departing user was the lead
+      if (!left.some(p => p.userId === leadUserIdRef.current)) return;
+      if (!sessionIdRef.current || !channelRef.current) return;
+
+      const state = channel.presenceState();
+      const remaining = Object.values(state).flat() as Array<{ userId: string; role: string }>;
+      const mgrs = remaining
+        .filter(p => p.role === 'jamaneger')
+        .sort((a, b) => a.userId.localeCompare(b.userId));
+
+      if (mgrs.length > 0 && mgrs[0].userId === currentUserIdRef.current
+          && roleRef.current === 'jamaneger' && !isLeadRef.current) {
+        // I am the first remaining manager — take lead
+        isLeadRef.current = true;
+        leadUserIdRef.current = currentUserIdRef.current;
+        setIsLead(true);
+        setLeadUserId(currentUserIdRef.current!);
+        supabase.rpc('take_jam_lead', {
+          p_session_id: sessionIdRef.current,
+          p_user_id:    currentUserIdRef.current!,
+        }).then(() => {});
+        channelRef.current.send({
+          type: 'broadcast', event: 'lead_change',
+          payload: { userId: currentUserIdRef.current! },
+        });
+      }
     });
 
     // ── Broadcast listeners ────────────────────────────────────────────────
@@ -253,10 +325,12 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     });
 
     channel.on('broadcast', { event: 'session_end' }, () => {
+      if (abandonedTimerRef.current) { clearTimeout(abandonedTimerRef.current); abandonedTimerRef.current = null; }
       localStorage.removeItem('muzalkin_jam_code');
       setRole(null); setSessionCode(null); setSessionId(null);
       setIsConnected(false); setParticipantCount(0);
       setMembers([]); setQueue([]); setCurrentQueueItemId(null);
+      setNoManagerSince(null);
       supabase.removeChannel(channel);
       channelRef.current = null;
       // Empty songId signals SongDetailPage to navigate back
@@ -306,6 +380,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     channel.on('broadcast', { event: 'remove_participant' }, ({ payload }: { payload: { userId: string } }) => {
       if (payload.userId === currentUserIdRef.current) {
         // This user was kicked — clean up
+        if (abandonedTimerRef.current) { clearTimeout(abandonedTimerRef.current); abandonedTimerRef.current = null; }
         localStorage.removeItem('muzalkin_jam_code');
         setRole(null); setSessionCode(null); setSessionId(null);
         setIsConnected(false); setParticipantCount(0);
@@ -540,11 +615,12 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
 
     supabase.removeChannel(channelRef.current);
     channelRef.current = null;
+    if (abandonedTimerRef.current) { clearTimeout(abandonedTimerRef.current); abandonedTimerRef.current = null; }
     localStorage.removeItem('muzalkin_jam_code');
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
-    setOnlineUserIds(new Set()); setLeadUserId(null);
+    setOnlineUserIds(new Set()); setLeadUserId(null); setNoManagerSince(null);
   }, [sessionCode]);
 
   // ---------------------------------------------------------------------------
@@ -572,11 +648,12 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     guestTokenRef.current = null;
     isGuestRef.current    = false;
     isLeadRef.current     = false;
+    if (abandonedTimerRef.current) { clearTimeout(abandonedTimerRef.current); abandonedTimerRef.current = null; }
     localStorage.removeItem('muzalkin_jam_code');
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
-    setOnlineUserIds(new Set()); setLeadUserId(null);
+    setOnlineUserIds(new Set()); setLeadUserId(null); setNoManagerSince(null);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -909,7 +986,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const value: JamContextValue = {
     role, isLead, sessionCode, sessionId, participantCount, isConnected,
     members, queue, currentQueueItemId, semitones, speedIndex,
-    onlineUserIds, isLeadOnline,
+    onlineUserIds, isLeadOnline, noManagerSince,
     startSession, joinSession, endSession, leaveSession,
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed, broadcastFontSize,
     onSongChange, onScrollSync, onFontSizeSync,

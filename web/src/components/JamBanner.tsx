@@ -7,7 +7,7 @@
  * Jamember sees:  🎸 ABC123 [Copy] |          👥 3 Jamember  | [Queue] [Leave]
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useJam } from '../lib/jamContext';
 
@@ -22,6 +22,19 @@ export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props)
   const jam     = useJam();
   const [copied,  setCopied]  = useState(false);
   const [leaving, setLeaving] = useState(false);
+
+  // Live countdown for abandoned-session timer
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!jam.noManagerSince) { setSecsLeft(null); return; }
+    const tick = () => {
+      const remaining = Math.max(0, Math.round(120 - (Date.now() - jam.noManagerSince!) / 1000));
+      setSecsLeft(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [jam.noManagerSince]);
 
   if (!jam.sessionCode) return null;
 
@@ -117,8 +130,17 @@ export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props)
           {isJamaneger ? t('jam_jamaneger_label') : t('jam_jamember_label')}
         </span>
 
-        {/* Leader offline indicator */}
-        {!jam.isLeadOnline && !jam.isLead && (
+        {/* Leader offline / session closing countdown */}
+        {secsLeft !== null && (
+          <span style={{
+            fontSize: 11, padding: '2px 6px',
+            backgroundColor: 'rgba(0,0,0,0.35)',
+            borderRadius: 4, whiteSpace: 'nowrap',
+          }}>
+            ⚠️ Closing in {Math.floor(secsLeft / 60)}:{String(secsLeft % 60).padStart(2, '0')}
+          </span>
+        )}
+        {secsLeft === null && !jam.isLeadOnline && !jam.isLead && (
           <span style={{
             fontSize: 11, padding: '2px 6px',
             backgroundColor: 'rgba(0,0,0,0.25)',

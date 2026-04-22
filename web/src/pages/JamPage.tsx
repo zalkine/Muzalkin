@@ -43,6 +43,19 @@ export default function JamPage() {
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const [copied,        setCopied]        = useState(false);
   const [leaving,       setLeaving]       = useState(false);
+  const [secsLeft,      setSecsLeft]      = useState<number | null>(null);
+
+  // Live countdown when no manager is present
+  useEffect(() => {
+    if (!jam.noManagerSince) { setSecsLeft(null); return; }
+    const tick = () => {
+      const remaining = Math.max(0, Math.round(120 - (Date.now() - jam.noManagerSince!) / 1000));
+      setSecsLeft(remaining);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [jam.noManagerSince]);
 
   // ── Join form state ────────────────────────────────────────────────────────
   const [joinCode,   setJoinCode]   = useState('');
@@ -164,17 +177,25 @@ export default function JamPage() {
             </span>
           </div>
 
-          {/* Row 2: actions + leader-offline warning */}
+          {/* Row 2: actions + leader-offline / countdown warning */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* Leader offline banner */}
-            {!jam.isLeadOnline && !jam.isLead && (
+            {secsLeft !== null && (
+              <span style={{
+                fontSize: 12, padding: '3px 8px',
+                backgroundColor: 'rgba(0,0,0,0.35)',
+                borderRadius: 5, whiteSpace: 'nowrap',
+              }}>
+                ⚠️ No leader — session closes in {Math.floor(secsLeft / 60)}:{String(secsLeft % 60).padStart(2, '0')}
+              </span>
+            )}
+            {secsLeft === null && !jam.isLeadOnline && !jam.isLead && (
               <span style={{
                 fontSize: 12, padding: '3px 8px',
                 backgroundColor: 'rgba(0,0,0,0.25)',
                 borderRadius: 5, whiteSpace: 'nowrap',
               }}>
                 ⚠️ Leader offline
-                {isJamaneger ? ' — tap Take Control to lead' : ' — waiting for them to reconnect'}
+                {isJamaneger ? ' — tap Take Control to lead' : ' — waiting to reconnect'}
               </span>
             )}
             {isJamaneger && !jam.isLead && (
