@@ -52,7 +52,7 @@ export default function JamMemberList({ isOpen, onClose, isRTL = false }: Props)
               color: '#fff', borderRadius: 10,
               padding: '1px 7px',
             }}>
-              {jam.members.length}
+              {jam.participantCount}/{jam.members.length}
             </span>
           </div>
           <button
@@ -71,7 +71,8 @@ export default function JamMemberList({ isOpen, onClose, isRTL = false }: Props)
             </p>
           ) : (
             jam.members.map(member => {
-              const isMgr = member.role === 'jamaneger';
+              const isMgr    = member.role === 'jamaneger';
+              const isOnline = jam.onlineUserIds.has(member.userId);
               return (
                 <div
                   key={member.userId}
@@ -81,22 +82,35 @@ export default function JamMemberList({ isOpen, onClose, isRTL = false }: Props)
                     gap:           10,
                     padding:       '10px 0',
                     borderBottom:  '1px solid var(--border)',
+                    opacity:       isOnline ? 1 : 0.5,
                   }}
                 >
-                  {/* Avatar placeholder */}
-                  <div style={{
-                    width:           36,
-                    height:          36,
-                    borderRadius:    '50%',
-                    backgroundColor: isMgr ? 'var(--accent)' : 'var(--surface)',
-                    border:          '1px solid var(--border)',
-                    display:         'flex',
-                    alignItems:      'center',
-                    justifyContent:  'center',
-                    fontSize:        16,
-                    flexShrink:      0,
-                  }}>
-                    {isMgr ? '🎸' : member.isGuest ? '👤' : '🎵'}
+                  {/* Avatar + online dot */}
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
+                    <div style={{
+                      width:           36,
+                      height:          36,
+                      borderRadius:    '50%',
+                      backgroundColor: isMgr ? 'var(--accent)' : 'var(--surface)',
+                      border:          '1px solid var(--border)',
+                      display:         'flex',
+                      alignItems:      'center',
+                      justifyContent:  'center',
+                      fontSize:        16,
+                    }}>
+                      {isMgr ? '🎸' : member.isGuest ? '👤' : '🎵'}
+                    </div>
+                    {/* Online indicator dot */}
+                    <div style={{
+                      position:        'absolute',
+                      bottom:          1,
+                      right:           1,
+                      width:           9,
+                      height:          9,
+                      borderRadius:    '50%',
+                      backgroundColor: isOnline ? '#4CAF50' : 'var(--text3)',
+                      border:          '2px solid var(--card-bg)',
+                    }} />
                   </div>
 
                   {/* Name + role badge */}

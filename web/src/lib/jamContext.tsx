@@ -67,6 +67,10 @@ export type JamContextValue = {
   currentQueueItemId: string | null;
   semitones:          number;
   speedIndex:         number;
+  /** Set of userIds currently online via Supabase Realtime presence. */
+  onlineUserIds:      Set<string>;
+  /** False when we know the lead is disconnected (presence synced but lead absent). */
+  isLeadOnline:       boolean;
 
   /** Jamaneger: create a new session. Returns the 6-char code. Optionally seeds queue with opening song. */
   startSession:    (song?: SongRef) => Promise<string | null>;
@@ -155,6 +159,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const [isConnected,        setIsConnected]        = useState(false);
   const [members,            setMembers]            = useState<JamMember[]>([]);
   const [queue,              setQueue]              = useState<QueueItem[]>([]);
+  const [onlineUserIds,      setOnlineUserIds]      = useState<Set<string>>(new Set());
+  const [leadUserId,         setLeadUserId]         = useState<string | null>(null);
   const [currentQueueItemId, setCurrentQueueItemId] = useState<string | null>(null);
   const [semitones,          setSemitones]          = useState(0);
   const [speedIndex,         setSpeedIndex]         = useState(1);
@@ -223,10 +229,13 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       config: { presence: { key: userId } },
     });
 
-    // Presence: count connected users
+    // Presence: track connected users and count
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
-      setParticipantCount(Object.values(state).flat().length);
+      const entries = Object.values(state).flat() as Array<{ userId: string }>;
+      const online = new Set(entries.map(p => p.userId));
+      setOnlineUserIds(online);
+      setParticipantCount(online.size);
     });
 
     // ── Broadcast listeners ────────────────────────────────────────────────
@@ -291,6 +300,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
       const iAmLead = payload.userId === currentUserIdRef.current;
       isLeadRef.current = iAmLead;
       setIsLead(iAmLead);
+      setLeadUserId(payload.userId);
     });
 
     channel.on('broadcast', { event: 'remove_participant' }, ({ payload }: { payload: { userId: string } }) => {
@@ -390,6 +400,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setMembers([{ userId: user.id, displayName, role: 'jamaneger', isGuest: false }]);
 
     localStorage.setItem('muzalkin_jam_code', code);
+    setLeadUserId(user.id);
     return code;
   }, [joinChannel]);
 
@@ -498,6 +509,8 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setCurrentQueueItemId(currentItem?.id ?? null);
 
     localStorage.setItem('muzalkin_jam_code', upper);
+    const effectiveLeadId = (session.lead_user_id ?? session.host_user_id) as string | null;
+    if (effectiveLeadId) setLeadUserId(effectiveLeadId);
 
     if (session.current_song_id) {
       return {
@@ -531,6 +544,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
+    setOnlineUserIds(new Set()); setLeadUserId(null);
   }, [sessionCode]);
 
   // ---------------------------------------------------------------------------
@@ -562,6 +576,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     setRole(null); setIsLead(false); setSessionCode(null); setSessionId(null);
     setIsConnected(false); setParticipantCount(0);
     setMembers([]); setQueue([]); setCurrentQueueItemId(null);
+    setOnlineUserIds(new Set()); setLeadUserId(null);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -888,9 +903,13 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // isLeadOnline: true until presence has synced AND the lead's userId is absent
+  const isLeadOnline = onlineUserIds.size === 0 || !leadUserId || onlineUserIds.has(leadUserId);
+
   const value: JamContextValue = {
     role, isLead, sessionCode, sessionId, participantCount, isConnected,
     members, queue, currentQueueItemId, semitones, speedIndex,
+    onlineUserIds, isLeadOnline,
     startSession, joinSession, endSession, leaveSession,
     broadcastSongChange, broadcastScroll, broadcastTranspose, broadcastSpeed, broadcastFontSize,
     onSongChange, onScrollSync, onFontSizeSync,

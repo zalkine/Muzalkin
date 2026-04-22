@@ -117,6 +117,17 @@ export default function JamBanner({ onLeft, onOpenQueue, onOpenMembers }: Props)
           {isJamaneger ? t('jam_jamaneger_label') : t('jam_jamember_label')}
         </span>
 
+        {/* Leader offline indicator */}
+        {!jam.isLeadOnline && !jam.isLead && (
+          <span style={{
+            fontSize: 11, padding: '2px 6px',
+            backgroundColor: 'rgba(0,0,0,0.25)',
+            borderRadius: 4, whiteSpace: 'nowrap',
+          }}>
+            ⚠️ Leader offline
+          </span>
+        )}
+
         {/* Take Lead — visible to non-lead jamanagers only */}
         {jam.role === 'jamaneger' && !jam.isLead && (
           <button onClick={jam.takeLead} style={{ ...chipBtn, backgroundColor: 'rgba(255,255,255,0.35)', fontWeight: 800 }}>

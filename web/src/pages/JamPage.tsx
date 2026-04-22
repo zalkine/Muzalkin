@@ -164,8 +164,19 @@ export default function JamPage() {
             </span>
           </div>
 
-          {/* Row 2: actions */}
+          {/* Row 2: actions + leader-offline warning */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Leader offline banner */}
+            {!jam.isLeadOnline && !jam.isLead && (
+              <span style={{
+                fontSize: 12, padding: '3px 8px',
+                backgroundColor: 'rgba(0,0,0,0.25)',
+                borderRadius: 5, whiteSpace: 'nowrap',
+              }}>
+                ⚠️ Leader offline
+                {isJamaneger ? ' — tap Take Control to lead' : ' — waiting for them to reconnect'}
+              </span>
+            )}
             {isJamaneger && !jam.isLead && (
               <button
                 onClick={jam.takeLead}
