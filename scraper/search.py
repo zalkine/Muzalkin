@@ -7,6 +7,7 @@ Called by Node.js backend via child_process.
 
 Usage:
     python3 scraper/search.py tab4u  "שיר לשלום"
+    python3 scraper/search.py tab4u  "wonderwall" en
     python3 scraper/search.py ug     "wonderwall"
 
 Outputs JSON array of { title, artist, source, url } to stdout.
@@ -35,7 +36,11 @@ def make_scraper():
 # Tab4U  (Hebrew + English)
 # ---------------------------------------------------------------------------
 
-def search_tab4u(query: str) -> list[dict]:
+def search_tab4u(query: str, lang: str = 'he') -> list[dict]:
+    # Hebrew songs live on www.tab4u.com; English songs on en.tab4u.com.
+    # Using the wrong subdomain returns the other language's catalogue and
+    # builds URLs that point to the wrong site, causing fetch to fail.
+    base    = 'https://en.tab4u.com' if lang == 'en' else 'https://www.tab4u.com'
     scraper = make_scraper()
     results = []
     seen    = set()
@@ -43,12 +48,9 @@ def search_tab4u(query: str) -> list[dict]:
     for page in range(MAX_PAGES):
         offset = page * PAGE_SIZE
         if offset == 0:
-            url = f"https://www.tab4u.com/resultsSimple?tab=songs&q={quote(query)}"
+            url = f"{base}/resultsSimple?tab=songs&q={quote(query)}"
         else:
-            url = (
-                f"https://www.tab4u.com/resultsSimple?"
-                f"tab=songs&q={quote(query)}&n={PAGE_SIZE}&s={offset}"
-            )
+            url = f"{base}/resultsSimple?tab=songs&q={quote(query)}&n={PAGE_SIZE}&s={offset}"
 
         if page > 0:
             time.sleep(1)
@@ -92,11 +94,13 @@ def search_tab4u(query: str) -> list[dict]:
             seen.add(key)
             new_count += 1
 
+            # Normalise href: strip leading slash if present so f"{base}/{href}" is clean
+            href_clean = href.lstrip('/')
             results.append({
                 "title" : title,
                 "artist": artist,
                 "source": "tab4u",
-                "url"   : f"https://www.tab4u.com/{href}",
+                "url"   : f"{base}/{href_clean}",
             })
 
         print(f"[tab4u] page {page+1}: {new_count} new (total {len(results)})", file=sys.stderr)
@@ -262,14 +266,15 @@ def search_cifraclub(query: str) -> list[dict]:
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: search.py <source> <query>", file=sys.stderr)
+        print("Usage: search.py <source> <query> [lang]", file=sys.stderr)
         sys.exit(1)
 
     source = sys.argv[1].lower()
     query  = sys.argv[2]
+    lang   = sys.argv[3] if len(sys.argv) > 3 else 'he'
 
     if source == "tab4u":
-        out = search_tab4u(query)
+        out = search_tab4u(query, lang)
     elif source in ("ug", "ultimate_guitar"):
         out = search_ug(query)
     elif source == "cifraclub":

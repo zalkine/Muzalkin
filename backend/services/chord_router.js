@@ -150,8 +150,8 @@ function runPythonScraper(scriptName, args) {
 }
 
 // Returns array of { title, artist, source, url }
-function searchTab4U(query) {
-  return runPythonScraper('search.py', ['tab4u', query]) ?? [];
+function searchTab4U(query, lang = 'he') {
+  return runPythonScraper('search.py', ['tab4u', query, lang]) ?? [];
 }
 
 function searchUltimateGuitar(query) {
@@ -206,19 +206,19 @@ async function searchChords(query, lang = 'he') {
       });
 
       if (lang === 'he') {
-        return searchTab4U(query).map(r => toResult(r, 'tab4u'));
+        return searchTab4U(query, 'he').map(r => toResult(r, 'tab4u'));
       }
-      // English: search UG (best catalog), Cifraclub (cloud-accessible), and Tab4U.
-      // Direct URLs from search avoid the unreliable slug-guessing at fetch time.
-      // UG may 403 from datacenter IPs — searchUltimateGuitar returns [] on failure.
-      const ugResults    = searchUltimateGuitar(query).map(r => toResult(r, 'ultimate_guitar'));
+      // English: Tab4U English subdomain (en.tab4u.com) is the preferred source —
+      // it uses the correct domain so fetched URLs work and the parser returns chords.
+      // Cifraclub supplements with additional results; UG is tried but may 403.
+      const tab4uResults = searchTab4U(query, 'en').map(r => toResult(r, 'tab4u'));
       const cifraResults = searchCifraclub(query).map(r => toResult(r, 'cifraclub'));
-      const tab4uResults = searchTab4U(query).map(r => toResult(r, 'tab4u'));
+      const ugResults    = searchUltimateGuitar(query).map(r => toResult(r, 'ultimate_guitar'));
 
-      // Merge: UG first (richest English catalog), then Cifraclub, then Tab4U fallback
+      // Merge: Tab4U first (preferred), then Cifraclub, then UG
       const seenEn = new Set();
       const mergedEn = [];
-      for (const r of [...ugResults, ...cifraResults, ...tab4uResults]) {
+      for (const r of [...tab4uResults, ...cifraResults, ...ugResults]) {
         const k = `${r.song_title.toLowerCase()}|${(r.artist || '').toLowerCase()}`;
         if (!seenEn.has(k)) {
           seenEn.add(k);
@@ -303,22 +303,28 @@ async function fetchChordsForSong({ url, title, artist, source, lang }) {
     console.warn('Cache lookup skipped (Supabase unreachable):', cacheErr.message);
   }
 
-  // For English Tab4U results, Cifraclub has richer chord data (positional format).
-  // Try Cifraclub first using a guessed URL; fall back to the original source if it fails.
+  // For English Tab4U results, fetch Tab4U directly (en.tab4u.com URLs from search
+  // are correct). Fall back to Cifraclub URL guessing only if Tab4U returns no chords.
   let scraped = null;
   let effectiveUrl    = url;
   let effectiveSource = source;
 
   if (lang === 'en' && source === 'tab4u' && title) {
-    console.log(`[fetch] English song — trying Cifraclub first for '${title}' by '${artist}'`);
-    const cifraResult = tryFetchCifraclub(title, artist);
-    if (cifraResult) {
-      console.log(`[fetch] Cifraclub succeeded: ${cifraResult.chords_data.length} lines`);
-      scraped         = cifraResult;
-      effectiveUrl    = cifraResult.raw_url;
-      effectiveSource = 'cifraclub';
+    console.log(`[fetch] English Tab4U song — fetching '${title}' by '${artist}'`);
+    scraped = fetchByUrl('tab4u', url);
+    const chordLines = scraped?.chords_data?.filter(l => l.type === 'chords').length ?? 0;
+    if (chordLines < 2) {
+      console.log(`[fetch] Tab4U returned ${chordLines} chord lines — trying Cifraclub fallback`);
+      scraped = null;
+      const cifraResult = tryFetchCifraclub(title, artist);
+      if (cifraResult) {
+        console.log(`[fetch] Cifraclub fallback succeeded: ${cifraResult.chords_data.length} lines`);
+        scraped         = cifraResult;
+        effectiveUrl    = cifraResult.raw_url;
+        effectiveSource = 'cifraclub';
+      }
     } else {
-      console.log(`[fetch] Cifraclub miss — falling back to Tab4U`);
+      console.log(`[fetch] Tab4U succeeded: ${chordLines} chord lines`);
     }
   }
 
