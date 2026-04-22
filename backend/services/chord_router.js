@@ -208,10 +208,24 @@ async function searchChords(query, lang = 'he') {
       if (lang === 'he') {
         return searchTab4U(query).map(r => toResult(r, 'tab4u'));
       }
-      // English: Tab4U returns query-specific results and works from cloud IPs.
-      // UG blocks datacenter requests (403); Cifraclub search is JS-rendered (not usable).
-      // We search Tab4U here; at fetch time we try Cifraclub first for better chord data.
-      return searchTab4U(query).map(r => toResult(r, 'tab4u'));
+      // English: search UG (best catalog), Cifraclub (cloud-accessible), and Tab4U.
+      // Direct URLs from search avoid the unreliable slug-guessing at fetch time.
+      // UG may 403 from datacenter IPs — searchUltimateGuitar returns [] on failure.
+      const ugResults    = searchUltimateGuitar(query).map(r => toResult(r, 'ultimate_guitar'));
+      const cifraResults = searchCifraclub(query).map(r => toResult(r, 'cifraclub'));
+      const tab4uResults = searchTab4U(query).map(r => toResult(r, 'tab4u'));
+
+      // Merge: UG first (richest English catalog), then Cifraclub, then Tab4U fallback
+      const seenEn = new Set();
+      const mergedEn = [];
+      for (const r of [...ugResults, ...cifraResults, ...tab4uResults]) {
+        const k = `${r.song_title.toLowerCase()}|${(r.artist || '').toLowerCase()}`;
+        if (!seenEn.has(k)) {
+          seenEn.add(k);
+          mergedEn.push(r);
+        }
+      }
+      return mergedEn;
     })(),
   ]);
 
