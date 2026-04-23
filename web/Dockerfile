@@ -6,10 +6,9 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# Serve stage — nginx on port 8080 (Cloud Run default)
-FROM nginx:alpine
-COPY --from=builder /app/dist /usr/share/nginx/html
-RUN echo 'server { listen 8080; root /usr/share/nginx/html; index index.html; location / { try_files $uri $uri/ /index.html; } }' \
-    > /etc/nginx/conf.d/default.conf
+# Serve stage — lightweight static file server
+FROM node:20-alpine
+RUN npm install -g serve
+COPY --from=builder /app/dist /app/dist
 EXPOSE 8080
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["serve", "-s", "/app/dist", "-l", "8080"]
