@@ -311,12 +311,23 @@ export default function SongDetailPage() {
     };
   }, []);
 
+  // Keep screen alive whenever scrolling is active OR the user is in a jam session
+  useEffect(() => {
+    const shouldHold = scrolling || !!jam.sessionCode;
+    if (shouldHold && !wakeLockRef.current) {
+      navigator.wakeLock?.request('screen')
+        .then(lock => { wakeLockRef.current = lock; })
+        .catch(() => {});
+    } else if (!shouldHold && wakeLockRef.current) {
+      wakeLockRef.current.release();
+      wakeLockRef.current = null;
+    }
+  }, [scrolling, jam.sessionCode]);
+
   // Stop auto-scroll and reset to top whenever the song changes (id param changes)
   useEffect(() => {
     if (scrollTimer.current) { clearInterval(scrollTimer.current); scrollTimer.current = null; }
     setScrolling(false);
-    wakeLockRef.current?.release();
-    wakeLockRef.current = null;
     scrollOffset.current = 0;
     if (scrollAreaRef.current) scrollAreaRef.current.scrollTo({ top: 0, behavior: 'auto' });
   }, [id]);
@@ -498,15 +509,8 @@ export default function SongDetailPage() {
       if (scrollTimer.current) clearInterval(scrollTimer.current);
       scrollTimer.current = null;
       setScrolling(false);
-      // Release wake lock when scroll stops
-      wakeLockRef.current?.release();
-      wakeLockRef.current = null;
     } else {
       setScrolling(true);
-      // Request wake lock so screen stays on while scrolling
-      navigator.wakeLock?.request('screen')
-        .then(lock => { wakeLockRef.current = lock; })
-        .catch(() => {}); // silently ignore if unsupported or denied
       setTimeout(() => {
         scrollTimer.current = setInterval(() => {
           scrollOffset.current += SCROLL_SPEEDS[speedIndex];

@@ -92,6 +92,20 @@ export default function JamPage() {
 
   // ── Session actions ────────────────────────────────────────────────────────
 
+  // Keep screen alive for the entire duration of a jam session
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  useEffect(() => {
+    if (jam.sessionCode && !wakeLockRef.current) {
+      navigator.wakeLock?.request('screen')
+        .then(lock => { wakeLockRef.current = lock; })
+        .catch(() => {});
+    } else if (!jam.sessionCode && wakeLockRef.current) {
+      wakeLockRef.current.release();
+      wakeLockRef.current = null;
+    }
+    return () => { wakeLockRef.current?.release(); wakeLockRef.current = null; };
+  }, [jam.sessionCode]);
+
   const handleStart = async () => {
     if (!nickname.trim()) return;
     setStartStatus('starting');
