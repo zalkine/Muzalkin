@@ -166,7 +166,7 @@ export function JamProvider({ children }: { children: React.ReactNode }) {
   const [noManagerSince,     setNoManagerSince]     = useState<number | null>(null);
   const [currentQueueItemId, setCurrentQueueItemId] = useState<string | null>(null);
   const [semitones,          setSemitones]          = useState(0);
-  const [speedIndex,         setSpeedIndex]         = useState(1);
+  const [speedIndex,         setSpeedIndex]         = useState(3); // default 0.4 px/frame
 
   const channelRef          = useRef<RealtimeChannel | null>(null);
   const sessionIdRef        = useRef<string | null>(null);

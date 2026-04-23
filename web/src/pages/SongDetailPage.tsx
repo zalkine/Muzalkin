@@ -83,7 +83,7 @@ function expandForEditor(data: ChordLine[]): ChordLineSimple[] {
   return result;
 }
 
-const SCROLL_SPEEDS = [0.2, 0.4, 0.6, 0.9, 1.4];
+const SCROLL_SPEEDS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.2, 1.4];
 
 /**
  * Detect the actual language of a song from its chord/lyric content.
@@ -245,7 +245,7 @@ export default function SongDetailPage() {
   const scrollTimer   = useRef<ReturnType<typeof setInterval> | null>(null);
   const wakeLockRef   = useRef<WakeLockSentinel | null>(null);
   const [scrolling,   setScrolling]  = useState(false);
-  const [speedIndex,  setSpeedIndex] = useState(1);
+  const [speedIndex,  setSpeedIndex] = useState(3); // default 0.4 px/frame
 
   const [playlists,          setPlaylists]          = useState<Playlist[]>([]);
   const [showPLModal,        setShowPLModal]        = useState(false);
