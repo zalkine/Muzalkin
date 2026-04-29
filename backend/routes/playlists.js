@@ -23,24 +23,40 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+// Sets req.user if a valid token is present, but never blocks unauthenticated requests.
+async function optionalAuth(req, res, next) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) { req.user = null; return next(); }
+
+  const { data: { user } } = await getSupabaseAnon().auth.getUser(token);
+  req.user = user ?? null;
+  next();
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/playlists  — list user's own + all public playlists, sorted by
 //                      song count descending (most popular first)
 // ---------------------------------------------------------------------------
 
-router.get('/', requireAuth, async (req, res) => {
-  // Step 1: fetch playlists (own + public)
-  const { data: playlistData, error: plErr } = await getSupabaseAdmin()
+router.get('/', optionalAuth, async (req, res) => {
+  // Logged-in users see their own playlists + all public ones.
+  // Guests see only public playlists.
+  let query = getSupabaseAdmin()
     .from('playlists')
-    .select('id, name, description, is_public, created_at, user_id, playlist_songs(count)')
-    .or(`user_id.eq.${req.user.id},is_public.eq.true`);
+    .select('id, name, description, is_public, created_at, user_id, playlist_songs(count)');
+
+  query = req.user
+    ? query.or(`user_id.eq.${req.user.id},is_public.eq.true`)
+    : query.eq('is_public', true);
+
+  const { data: playlistData, error: plErr } = await query;
 
   if (plErr) {
     console.error('Playlist fetch error:', plErr.message);
     return res.status(500).json({ error: 'Failed to fetch playlists' });
   }
 
-  // Step 2: look up display names for all unique creator user_ids
+  // Look up display names for all unique creator user_ids
   const userIds = [...new Set((playlistData || []).map(p => p.user_id))];
   const nameMap = {};
 
@@ -53,17 +69,31 @@ router.get('/', requireAuth, async (req, res) => {
     (userData || []).forEach(u => { nameMap[u.id] = u.display_name; });
   }
 
+  // Fallback: use JWT metadata for the current user in case the users table
+  // doesn't have a record for them yet (e.g. signup trigger not yet fired).
+  const ownerFallbackName = req.user
+    ? (req.user.user_metadata?.full_name
+      || req.user.user_metadata?.name
+      || req.user.email?.split('@')[0]
+      || 'Me')
+    : null;
+
   const playlists = (playlistData || [])
-    .map((p) => ({
-      id:           p.id,
-      name:         p.name,
-      description:  p.description,
-      is_public:    p.is_public,
-      created_at:   p.created_at,
-      is_owner:     p.user_id === req.user.id,
-      creator_name: nameMap[p.user_id] ?? 'Unknown',
-      song_count:   p.playlist_songs?.[0]?.count ?? 0,
-    }))
+    .map((p) => {
+      const isOwner = req.user && p.user_id === req.user.id;
+      return {
+        id:           p.id,
+        name:         p.name,
+        description:  p.description,
+        is_public:    p.is_public,
+        created_at:   p.created_at,
+        is_owner:     !!isOwner,
+        creator_name: isOwner
+          ? (nameMap[p.user_id] || ownerFallbackName)
+          : (nameMap[p.user_id] ?? 'Unknown'),
+        song_count:   p.playlist_songs?.[0]?.count ?? 0,
+      };
+    })
     .sort((a, b) => b.song_count - a.song_count);
 
   res.json(playlists);
@@ -163,7 +193,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 //                                 non-owners may view if playlist is public
 // ---------------------------------------------------------------------------
 
-router.get('/:id/songs', requireAuth, async (req, res) => {
+router.get('/:id/songs', optionalAuth, async (req, res) => {
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id, is_public')
@@ -172,7 +202,7 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
 
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
 
-  const isOwner  = playlist.user_id === req.user.id;
+  const isOwner  = req.user && playlist.user_id === req.user.id;
   const canView  = isOwner || playlist.is_public;
   if (!canView) return res.status(403).json({ error: 'Forbidden' });
 

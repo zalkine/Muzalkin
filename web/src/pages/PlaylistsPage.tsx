@@ -25,21 +25,7 @@ export default function PlaylistsPage() {
   const session = useSession();
   const navigate = useNavigate();
 
-  if (!session) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16, padding: 24 }}>
-        <span style={{ fontSize: 48 }}>🎵</span>
-        <p style={{ fontSize: 16, color: 'var(--text2)', textAlign: 'center' }}>{t('sign_in_to_see_playlists')}</p>
-        <button
-          onClick={() => navigate('/login')}
-          style={{ padding: '10px 24px', backgroundColor: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
-        >
-          {t('sign_in_google')}
-        </button>
-      </div>
-    );
-  }
-
+  // All hooks declared before any conditional return
   const [playlists,  setPlaylists]  = useState<Playlist[]>([]);
   const [status,     setStatus]     = useState<Status>('loading');
   const [showModal,  setShowModal]  = useState(false);
@@ -55,12 +41,12 @@ export default function PlaylistsPage() {
 
   const loadPlaylists = useCallback(async () => {
     setStatus('loading');
+    // No token needed — guests see public playlists; backend handles both cases
     const token = await getToken();
-    if (!token) { setStatus('error'); return; }
 
     try {
       const res = await fetch(`${BACKEND_URL}/api/playlists`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) { setStatus('error'); return; }
       setPlaylists(await res.json());
@@ -154,12 +140,12 @@ export default function PlaylistsPage() {
         gap: 10,
       }}
     >
-      {/* Info area — navigates to detail except when editing */}
+      {/* Info area */}
       <div
         style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
         onClick={() => editingId !== pl.id && navigate(`/playlist/${pl.id}`)}
       >
-        {/* Name + badge row */}
+        {/* Name + badge */}
         <div style={{
           display: 'flex',
           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -204,7 +190,7 @@ export default function PlaylistsPage() {
             {pl.is_public ? t('public_badge') : t('private_badge')}
           </span>
         </div>
-        {/* Subtitle row */}
+        {/* Subtitle */}
         <div style={{
           display: 'flex',
           flexDirection: isRTL ? 'row-reverse' : 'row',
@@ -273,17 +259,19 @@ export default function PlaylistsPage() {
         <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
           {t('playlists')}
         </h2>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            width: 36, height: 36, borderRadius: 18,
-            backgroundColor: 'var(--accent)', border: 'none',
-            color: '#fff', fontSize: 22, lineHeight: '36px',
-            cursor: 'pointer',
-          }}
-        >
-          +
-        </button>
+        {session && (
+          <button
+            onClick={() => setShowModal(true)}
+            style={{
+              width: 36, height: 36, borderRadius: 18,
+              backgroundColor: 'var(--accent)', border: 'none',
+              color: '#fff', fontSize: 22, lineHeight: '36px',
+              cursor: 'pointer',
+            }}
+          >
+            +
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -301,36 +289,54 @@ export default function PlaylistsPage() {
 
         {status === 'done' && (
           <>
-            {/* My Playlists section */}
-            <div style={{ padding: '10px 16px 4px' }}>
-              <span style={sectionLabelStyle}>{t('my_playlists')}</span>
-            </div>
-
-            {myPlaylists.length === 0 ? (
-              <div style={{ padding: '8px 16px 12px' }}>
-                <button
-                  onClick={() => setShowModal(true)}
-                  style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-                >
-                  + {t('create_playlist')}
-                </button>
-              </div>
-            ) : (
-              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 8px' }}>
-                {myPlaylists.map((pl, idx) => renderRow(pl, idx, myPlaylists))}
-              </ul>
+            {/* My Playlists section — only shown when logged in */}
+            {session && (
+              <>
+                <div style={{ padding: '10px 16px 4px' }}>
+                  <span style={sectionLabelStyle}>{t('my_playlists')}</span>
+                </div>
+                {myPlaylists.length === 0 ? (
+                  <div style={{ padding: '8px 16px 12px' }}>
+                    <button
+                      onClick={() => setShowModal(true)}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                    >
+                      + {t('create_playlist')}
+                    </button>
+                  </div>
+                ) : (
+                  <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 8px' }}>
+                    {myPlaylists.map((pl, idx) => renderRow(pl, idx, myPlaylists))}
+                  </ul>
+                )}
+              </>
             )}
 
             {/* Public Playlists section */}
             {publicPlaylists.length > 0 && (
               <>
-                <div style={{ padding: '10px 16px 4px', borderTop: '1px solid var(--border)' }}>
+                <div style={{ padding: '10px 16px 4px', borderTop: session ? '1px solid var(--border)' : 'none' }}>
                   <span style={sectionLabelStyle}>{t('public_playlists')}</span>
                 </div>
                 <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                   {publicPlaylists.map((pl, idx) => renderRow(pl, idx, publicPlaylists))}
                 </ul>
               </>
+            )}
+
+            {/* Guest prompt — shown below public playlists */}
+            {!session && (
+              <div style={{ ...centerStyle, height: 'auto', paddingTop: 32, paddingBottom: 32 }}>
+                <p style={{ color: 'var(--text3)', textAlign: 'center', margin: 0, fontSize: 14 }}>
+                  {t('sign_in_to_see_playlists')}
+                </p>
+                <button
+                  onClick={() => navigate('/login')}
+                  style={{ padding: '10px 24px', backgroundColor: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600 }}
+                >
+                  {t('sign_in_google')}
+                </button>
+              </div>
             )}
           </>
         )}

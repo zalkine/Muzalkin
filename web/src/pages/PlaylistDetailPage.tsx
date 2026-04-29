@@ -29,13 +29,13 @@ export default function PlaylistDetailPage() {
   const isRTL       = i18n.language === 'he';
   const session     = useSession();
 
+  // All hooks before any conditional returns
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [songs,    setSongs]    = useState<PlaylistSong[]>([]);
   const [status,   setStatus]   = useState<Status>('loading');
 
-  const isOwner = playlist?.user_id === session?.user.id;
+  const isOwner = !!session && playlist?.user_id === session.user.id;
 
-  // Copy-to-playlist state
   const [showCopyModal,  setShowCopyModal]  = useState(false);
   const [ownPlaylists,   setOwnPlaylists]   = useState<OwnPlaylist[]>([]);
   const [loadingOwn,     setLoadingOwn]     = useState(false);
@@ -48,32 +48,47 @@ export default function PlaylistDetailPage() {
   };
 
   const load = useCallback(async () => {
-    if (!id || !session) return;
+    if (!id) return;
     setStatus('loading');
 
-    const [plRes, songsRes] = await Promise.all([
-      supabase
-        .from('playlists')
-        .select('id, name, description, user_id')
-        .eq('id', id)
-        .single(),
-      supabase
-        .from('playlist_songs')
-        .select('id, position, song:song_id(id, title, artist, language, instrument)')
-        .eq('playlist_id', id)
-        .order('position', { ascending: true }),
-    ]);
+    // Fetch playlist metadata directly from Supabase (public row, no RLS issue)
+    const plRes = await supabase
+      .from('playlists')
+      .select('id, name, description, user_id')
+      .eq('id', id)
+      .single();
 
     if (plRes.error || !plRes.data) { setStatus('error'); return; }
-
     setPlaylist(plRes.data as Playlist);
-    setSongs((songsRes.data ?? []) as unknown as PlaylistSong[]);
+
+    // Fetch songs via backend API so RLS doesn't block non-owners on public playlists
+    const token = await getToken();
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/playlists/${id}/songs`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) { setStatus('error'); return; }
+      const data = await res.json();
+      // Backend returns { songs, songs.song } — reshape to match our type
+      setSongs((data as any[]).map(row => ({
+        id:       row.id,
+        position: row.position,
+        song:     row.songs ?? row.song,
+      })));
+    } catch {
+      setStatus('error');
+      return;
+    }
+
     setStatus('done');
-  }, [id, session]);
+  }, [id]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleRemove = useCallback(async (playlistSongId: string) => {
+    const token = await getToken();
+    if (!token) return;
+    // Remove by playlist_songs.id via Supabase (owner-only action, session guaranteed)
     const { error } = await supabase
       .from('playlist_songs')
       .delete()
@@ -93,7 +108,6 @@ export default function PlaylistDetailPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      // Only show playlists the user owns and that are not the source playlist
       setOwnPlaylists((data as any[]).filter(p => p.is_owner && p.id !== id));
     } finally {
       setLoadingOwn(false);
@@ -113,28 +127,15 @@ export default function PlaylistDetailPage() {
         body: JSON.stringify({ target_playlist_id: targetId }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setCopyMsg(t('copy_error'));
-      } else if (data.copied === 0) {
-        setCopyMsg(t('copy_nothing'));
-      } else {
-        setCopyMsg(t('copy_success', { count: data.copied }));
-      }
+      if (!res.ok)          setCopyMsg(t('copy_error'));
+      else if (!data.copied) setCopyMsg(t('copy_nothing'));
+      else                   setCopyMsg(t('copy_success', { count: data.copied }));
     } catch {
       setCopyMsg(t('copy_error'));
     } finally {
       setCopying(false);
     }
   }, [id, t]);
-
-  if (!session) {
-    return (
-      <div style={centerStyle}>
-        <p style={{ color: 'var(--text3)' }}>{t('sign_in_to_see_playlists')}</p>
-        <button onClick={() => navigate('/login')} style={accentBtnStyle}>{t('sign_in_google')}</button>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
@@ -159,8 +160,7 @@ export default function PlaylistDetailPage() {
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>{playlist.description}</div>
           )}
         </div>
-        {/* Copy to playlist button */}
-        {status === 'done' && (
+        {status === 'done' && session && (
           <button
             onClick={openCopyModal}
             title={t('copy_to_playlist')}
@@ -195,7 +195,9 @@ export default function PlaylistDetailPage() {
         {status === 'done' && songs.length === 0 && (
           <div style={centerStyle}>
             <p style={{ color: 'var(--text3)', textAlign: 'center' }}>{t('playlist_empty')}</p>
-            <button onClick={() => navigate('/search')} style={accentBtnStyle}>{t('search')}</button>
+            {session && (
+              <button onClick={() => navigate('/search')} style={accentBtnStyle}>{t('search')}</button>
+            )}
           </div>
         )}
 
@@ -209,7 +211,7 @@ export default function PlaylistDetailPage() {
                 borderBottom: idx < songs.length - 1 ? '1px solid var(--border2)' : 'none',
               }}>
                 <button
-                  onClick={() => navigate(`/song/${ps.song.id}`)}
+                  onClick={() => navigate(`/song/${ps.song?.id}`)}
                   style={{
                     flex: 1,
                     display: 'flex',
@@ -225,26 +227,22 @@ export default function PlaylistDetailPage() {
                 >
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
-                      {ps.song.title}
+                      {ps.song?.title}
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--text2)' }}>{ps.song.artist}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text2)' }}>{ps.song?.artist}</div>
                   </div>
                   <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
                 </button>
 
-                {/* Remove button — owner only */}
                 {isOwner && (
                   <button
                     onClick={() => handleRemove(ps.id)}
                     title={t('remove')}
                     style={{
                       padding: '14px 14px',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--text3)',
-                      fontSize: 18,
-                      cursor: 'pointer',
-                      lineHeight: 1,
+                      background: 'none', border: 'none',
+                      color: 'var(--text3)', fontSize: 18,
+                      cursor: 'pointer', lineHeight: 1,
                     }}
                   >
                     ✕
@@ -279,13 +277,10 @@ export default function PlaylistDetailPage() {
 
             {copyMsg && (
               <p style={{
-                margin: 0,
-                padding: '8px 12px',
-                borderRadius: 8,
+                margin: 0, padding: '8px 12px', borderRadius: 8,
                 backgroundColor: copyMsg === t('copy_error') ? 'rgba(204,51,51,0.1)' : 'rgba(66,133,244,0.1)',
                 color: copyMsg === t('copy_error') ? '#cc3333' : 'var(--accent)',
-                fontSize: 14,
-                textAlign: isRTL ? 'right' : 'left',
+                fontSize: 14, textAlign: isRTL ? 'right' : 'left',
               }}>
                 {copyMsg}
               </p>
@@ -314,8 +309,7 @@ export default function PlaylistDetailPage() {
                         width: '100%',
                         textAlign: isRTL ? 'right' : 'left',
                         padding: '11px 14px',
-                        background: 'none',
-                        border: 'none',
+                        background: 'none', border: 'none',
                         borderBottom: idx < ownPlaylists.length - 1 ? '1px solid var(--border2)' : 'none',
                         cursor: copying ? 'not-allowed' : 'pointer',
                         fontSize: 15,
