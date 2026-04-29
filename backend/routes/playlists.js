@@ -29,14 +29,31 @@ async function requireAuth(req, res, next) {
 // ---------------------------------------------------------------------------
 
 router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await getSupabaseAdmin()
+  // Step 1: fetch playlists (own + public)
+  const { data: playlistData, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
-    .select('id, name, description, is_public, created_at, user_id, users(display_name), playlist_songs(count)')
+    .select('id, name, description, is_public, created_at, user_id, playlist_songs(count)')
     .or(`user_id.eq.${req.user.id},is_public.eq.true`);
 
-  if (error) return res.status(500).json({ error: 'Failed to fetch playlists' });
+  if (plErr) {
+    console.error('Playlist fetch error:', plErr.message);
+    return res.status(500).json({ error: 'Failed to fetch playlists' });
+  }
 
-  const playlists = (data || [])
+  // Step 2: look up display names for all unique creator user_ids
+  const userIds = [...new Set((playlistData || []).map(p => p.user_id))];
+  const nameMap = {};
+
+  if (userIds.length > 0) {
+    const { data: userData } = await getSupabaseAdmin()
+      .from('users')
+      .select('id, display_name')
+      .in('id', userIds);
+
+    (userData || []).forEach(u => { nameMap[u.id] = u.display_name; });
+  }
+
+  const playlists = (playlistData || [])
     .map((p) => ({
       id:           p.id,
       name:         p.name,
@@ -44,7 +61,7 @@ router.get('/', requireAuth, async (req, res) => {
       is_public:    p.is_public,
       created_at:   p.created_at,
       is_owner:     p.user_id === req.user.id,
-      creator_name: p.users?.display_name ?? 'Unknown',
+      creator_name: nameMap[p.user_id] ?? 'Unknown',
       song_count:   p.playlist_songs?.[0]?.count ?? 0,
     }))
     .sort((a, b) => b.song_count - a.song_count);
