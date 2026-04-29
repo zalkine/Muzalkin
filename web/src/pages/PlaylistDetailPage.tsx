@@ -26,7 +26,7 @@ export default function PlaylistDetailPage() {
   const { id }      = useParams<{ id: string }>();
   const navigate    = useNavigate();
   const { t, i18n } = useTranslation();
-  const isRTL       = i18n.language === 'he' || document.documentElement.dir === 'rtl';
+  const isRTL       = i18n.language === 'he';
   const session     = useSession();
 
   // All hooks before any conditional returns

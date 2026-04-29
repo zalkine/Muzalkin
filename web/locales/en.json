@@ -34,7 +34,7 @@
   "songs_count_other": "{{count}} songs",
   "language_hebrew": "Hebrew (עברית)",
   "language_english": "English",
-  "language_note": "RTL layout changes take effect after reloading the page.",
+  "language_note": "Language changes take effect immediately across the app.",
   "transpose_up": "+0.5",
   "transpose_down": "−0.5",
   "semitones": "Tone",

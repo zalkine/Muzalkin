@@ -34,7 +34,7 @@
   "songs_count_other": "{{count}} שירים",
   "language_hebrew": "עברית",
   "language_english": "אנגלית (English)",
-  "language_note": "שינוי כיוון RTL ייכנס לתוקף לאחר טעינה מחדש של הדף.",
+  "language_note": "השפה תשתנה מיד בכל דפי האפליקציה.",
   "transpose_up": "+0.5",
   "transpose_down": "−0.5",
   "semitones": "טון",
