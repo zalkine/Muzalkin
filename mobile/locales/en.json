@@ -62,5 +62,11 @@
   "rename_playlist": "Rename",
   "delete_playlist": "Delete Playlist",
   "delete_playlist_confirm": "Delete \"{{name}}\"? This cannot be undone.",
-  "by_creator": "by {{name}}"
+  "by_creator": "by {{name}}",
+  "copy_to_playlist": "Copy to My Playlist",
+  "select_target_playlist": "Select target playlist",
+  "copy_success": "Copied {{count}} songs",
+  "copy_nothing": "All songs already in that playlist",
+  "copy_error": "Failed to copy playlist",
+  "copying": "Copying..."
 }

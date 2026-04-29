@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
 
+const BACKEND_URL = '';
+
 type PlaylistSong = {
-  id: string;         // playlist_songs.id
+  id: string;
   position: number;
   song: {
     id: string;
@@ -17,6 +19,7 @@ type PlaylistSong = {
 };
 
 type Playlist = { id: string; name: string; description: string | null; user_id: string };
+type OwnPlaylist = { id: string; name: string };
 type Status = 'loading' | 'done' | 'error';
 
 export default function PlaylistDetailPage() {
@@ -31,6 +34,18 @@ export default function PlaylistDetailPage() {
   const [status,   setStatus]   = useState<Status>('loading');
 
   const isOwner = playlist?.user_id === session?.user.id;
+
+  // Copy-to-playlist state
+  const [showCopyModal,  setShowCopyModal]  = useState(false);
+  const [ownPlaylists,   setOwnPlaylists]   = useState<OwnPlaylist[]>([]);
+  const [loadingOwn,     setLoadingOwn]     = useState(false);
+  const [copying,        setCopying]        = useState(false);
+  const [copyMsg,        setCopyMsg]        = useState<string | null>(null);
+
+  const getToken = async () => {
+    const { data: { session: s } } = await supabase.auth.getSession();
+    return s?.access_token ?? '';
+  };
 
   const load = useCallback(async () => {
     if (!id || !session) return;
@@ -66,6 +81,52 @@ export default function PlaylistDetailPage() {
     if (!error) setSongs(prev => prev.filter(s => s.id !== playlistSongId));
   }, []);
 
+  const openCopyModal = useCallback(async () => {
+    setShowCopyModal(true);
+    setCopyMsg(null);
+    setLoadingOwn(true);
+    const token = await getToken();
+    if (!token) { setLoadingOwn(false); return; }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/playlists`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      // Only show playlists the user owns and that are not the source playlist
+      setOwnPlaylists((data as any[]).filter(p => p.is_owner && p.id !== id));
+    } finally {
+      setLoadingOwn(false);
+    }
+  }, [id]);
+
+  const handleCopy = useCallback(async (targetId: string) => {
+    setCopying(true);
+    setCopyMsg(null);
+    const token = await getToken();
+    if (!token) { setCopying(false); return; }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/playlists/${id}/copy`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_playlist_id: targetId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCopyMsg(t('copy_error'));
+      } else if (data.copied === 0) {
+        setCopyMsg(t('copy_nothing'));
+      } else {
+        setCopyMsg(t('copy_success', { count: data.copied }));
+      }
+    } catch {
+      setCopyMsg(t('copy_error'));
+    } finally {
+      setCopying(false);
+    }
+  }, [id, t]);
+
   if (!session) {
     return (
       <div style={centerStyle}>
@@ -98,6 +159,23 @@ export default function PlaylistDetailPage() {
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>{playlist.description}</div>
           )}
         </div>
+        {/* Copy to playlist button */}
+        {status === 'done' && (
+          <button
+            onClick={openCopyModal}
+            title={t('copy_to_playlist')}
+            style={{
+              ...iconBtnStyle,
+              fontSize: 13, fontWeight: 600,
+              color: 'var(--accent)',
+              border: '1px solid var(--accent)',
+              borderRadius: 8,
+              padding: '5px 10px',
+            }}
+          >
+            {t('copy_to_playlist')}
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -177,6 +255,89 @@ export default function PlaylistDetailPage() {
           </ul>
         )}
       </div>
+
+      {/* Copy to playlist modal */}
+      {showCopyModal && (
+        <div style={overlayStyle}>
+          <div style={{ ...modalStyle, backgroundColor: 'var(--card-bg)' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: isRTL ? 'row-reverse' : 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <h3 style={{ margin: 0, color: 'var(--text)', textAlign: isRTL ? 'right' : 'left' }}>
+                {t('copy_to_playlist')}
+              </h3>
+              <button
+                onClick={() => { setShowCopyModal(false); setCopyMsg(null); }}
+                style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text3)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {copyMsg && (
+              <p style={{
+                margin: 0,
+                padding: '8px 12px',
+                borderRadius: 8,
+                backgroundColor: copyMsg === t('copy_error') ? 'rgba(204,51,51,0.1)' : 'rgba(66,133,244,0.1)',
+                color: copyMsg === t('copy_error') ? '#cc3333' : 'var(--accent)',
+                fontSize: 14,
+                textAlign: isRTL ? 'right' : 'left',
+              }}>
+                {copyMsg}
+              </p>
+            )}
+
+            {loadingOwn && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
+                <div style={spinnerStyle} />
+              </div>
+            )}
+
+            {!loadingOwn && ownPlaylists.length === 0 && !copyMsg && (
+              <p style={{ color: 'var(--text3)', fontSize: 14, textAlign: 'center', margin: 0 }}>
+                {t('no_playlists')}
+              </p>
+            )}
+
+            {!loadingOwn && ownPlaylists.length > 0 && (
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: 260, overflowY: 'auto' }}>
+                {ownPlaylists.map((pl, idx) => (
+                  <li key={pl.id}>
+                    <button
+                      onClick={() => !copying && handleCopy(pl.id)}
+                      disabled={copying}
+                      style={{
+                        width: '100%',
+                        textAlign: isRTL ? 'right' : 'left',
+                        padding: '11px 14px',
+                        background: 'none',
+                        border: 'none',
+                        borderBottom: idx < ownPlaylists.length - 1 ? '1px solid var(--border2)' : 'none',
+                        cursor: copying ? 'not-allowed' : 'pointer',
+                        fontSize: 15,
+                        color: copying ? 'var(--text3)' : 'var(--text)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {pl.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {copying && (
+              <p style={{ color: 'var(--text3)', fontSize: 14, textAlign: 'center', margin: 0 }}>
+                {t('copying')}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -205,4 +366,16 @@ const linkBtnStyle: React.CSSProperties = {
 const accentBtnStyle: React.CSSProperties = {
   padding: '10px 24px', backgroundColor: 'var(--accent)', color: '#fff',
   border: 'none', borderRadius: 8, fontSize: 15, cursor: 'pointer', fontWeight: 600,
+};
+
+const overlayStyle: React.CSSProperties = {
+  position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  padding: 32, zIndex: 100,
+};
+
+const modalStyle: React.CSSProperties = {
+  width: '100%', maxWidth: 400,
+  borderRadius: 12, padding: 20, display: 'flex',
+  flexDirection: 'column', gap: 14,
 };

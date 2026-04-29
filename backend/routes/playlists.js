@@ -228,6 +228,55 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/playlists/:id/copy  — copy all songs from :id into another playlist
+// Body: { target_playlist_id: string }
+// Source must be owned or public; target must be owned by the caller.
+// Songs already present in the target are skipped (no duplicates).
+// ---------------------------------------------------------------------------
+
+router.post('/:id/copy', requireAuth, async (req, res) => {
+  const { target_playlist_id } = req.body;
+  if (!target_playlist_id) return res.status(400).json({ error: 'Missing target_playlist_id' });
+
+  // Verify source is accessible
+  const { data: source, error: srcErr } = await getSupabaseAdmin()
+    .from('playlists').select('id, user_id, is_public').eq('id', req.params.id).single();
+  if (srcErr || !source) return res.status(404).json({ error: 'Source playlist not found' });
+  if (source.user_id !== req.user.id && !source.is_public) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  // Verify target is owned by caller
+  const { data: target, error: tgtErr } = await getSupabaseAdmin()
+    .from('playlists').select('id, user_id').eq('id', target_playlist_id).single();
+  if (tgtErr || !target) return res.status(404).json({ error: 'Target playlist not found' });
+  if (target.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  // Fetch source songs
+  const { data: sourceSongs } = await getSupabaseAdmin()
+    .from('playlist_songs').select('song_id').eq('playlist_id', req.params.id);
+  if (!sourceSongs || sourceSongs.length === 0) return res.json({ copied: 0 });
+
+  // Fetch existing songs in target to detect duplicates and find max position
+  const { data: targetSongs } = await getSupabaseAdmin()
+    .from('playlist_songs').select('song_id, position').eq('playlist_id', target_playlist_id);
+
+  const existingIds  = new Set((targetSongs || []).map(s => s.song_id));
+  const maxPosition  = (targetSongs || []).reduce((m, s) => Math.max(m, s.position ?? 0), -1);
+
+  const toInsert = sourceSongs
+    .filter(s => !existingIds.has(s.song_id))
+    .map((s, i) => ({ playlist_id: target_playlist_id, song_id: s.song_id, position: maxPosition + 1 + i }));
+
+  if (toInsert.length === 0) return res.json({ copied: 0 });
+
+  const { error: insErr } = await getSupabaseAdmin().from('playlist_songs').insert(toInsert);
+  if (insErr) return res.status(500).json({ error: 'Failed to copy songs' });
+
+  res.json({ copied: toInsert.length });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/playlists/:id/songs/:songId  — remove a song (owner only)
 // ---------------------------------------------------------------------------
 
