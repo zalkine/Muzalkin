@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 
 import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
+
+const BACKEND_URL = '';
 import { useJam } from '../lib/jamContext';
 import ChordDisplay, { ChordLine, ChordLineSimple } from '../components/ChordDisplay';
 import { normalizeChordData } from '../utils/chords';
@@ -298,6 +300,17 @@ export default function SongDetailPage() {
           setSong(s);
           setSavedId(saved.id); // already saved — enable edit button immediately
           setIsRTL(detectLangFromContent(s.chords_data || []) === 'he');
+        } else {
+          // Supabase RLS blocked access (e.g. guest viewing a song from a public playlist).
+          // Try the backend API which uses the service role and checks public-playlist membership.
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/songs/${id}`);
+            if (res.ok) {
+              const data = await res.json() as Song;
+              setSong(data);
+              setIsRTL(detectLangFromContent(data.chords_data || []) === 'he');
+            }
+          } catch { /* leave song as null — error state shown */ }
         }
         setLoading(false);
       });

@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * /api/playlists — playlist management and song-to-playlist association.
- * All routes require a valid Supabase JWT in Authorization: Bearer <token>.
- */
-
 const { Router }       = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -28,27 +23,78 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+// Sets req.user if a valid token is present, but never blocks unauthenticated requests.
+async function optionalAuth(req, res, next) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) { req.user = null; return next(); }
+
+  const { data: { user } } = await getSupabaseAnon().auth.getUser(token);
+  req.user = user ?? null;
+  next();
+}
+
 // ---------------------------------------------------------------------------
-// GET /api/playlists  — list user's playlists with song count
+// GET /api/playlists  — list user's own + all public playlists, sorted by
+//                      song count descending (most popular first)
 // ---------------------------------------------------------------------------
 
-router.get('/', requireAuth, async (req, res) => {
-  const { data, error } = await getSupabaseAdmin()
+router.get('/', optionalAuth, async (req, res) => {
+  // Logged-in users see their own playlists + all public ones.
+  // Guests see only public playlists.
+  let query = getSupabaseAdmin()
     .from('playlists')
-    .select('id, name, description, is_public, created_at, playlist_songs(count)')
-    .eq('user_id', req.user.id)
-    .order('created_at', { ascending: false });
+    .select('id, name, description, is_public, created_at, user_id, playlist_songs(count)');
 
-  if (error) return res.status(500).json({ error: 'Failed to fetch playlists' });
+  query = req.user
+    ? query.or(`user_id.eq.${req.user.id},is_public.eq.true`)
+    : query.eq('is_public', true);
 
-  const playlists = (data || []).map((p) => ({
-    id:          p.id,
-    name:        p.name,
-    description: p.description,
-    is_public:   p.is_public,
-    created_at:  p.created_at,
-    song_count:  p.playlist_songs?.[0]?.count ?? 0,
-  }));
+  const { data: playlistData, error: plErr } = await query;
+
+  if (plErr) {
+    console.error('Playlist fetch error:', plErr.message);
+    return res.status(500).json({ error: 'Failed to fetch playlists' });
+  }
+
+  // Look up display names for all unique creator user_ids
+  const userIds = [...new Set((playlistData || []).map(p => p.user_id))];
+  const nameMap = {};
+
+  if (userIds.length > 0) {
+    const { data: userData } = await getSupabaseAdmin()
+      .from('users')
+      .select('id, display_name')
+      .in('id', userIds);
+
+    (userData || []).forEach(u => { nameMap[u.id] = u.display_name; });
+  }
+
+  // Fallback: use JWT metadata for the current user in case the users table
+  // doesn't have a record for them yet (e.g. signup trigger not yet fired).
+  const ownerFallbackName = req.user
+    ? (req.user.user_metadata?.full_name
+      || req.user.user_metadata?.name
+      || req.user.email?.split('@')[0]
+      || 'Me')
+    : null;
+
+  const playlists = (playlistData || [])
+    .map((p) => {
+      const isOwner = req.user && p.user_id === req.user.id;
+      return {
+        id:           p.id,
+        name:         p.name,
+        description:  p.description,
+        is_public:    p.is_public,
+        created_at:   p.created_at,
+        is_owner:     !!isOwner,
+        creator_name: isOwner
+          ? (nameMap[p.user_id] || ownerFallbackName)
+          : (nameMap[p.user_id] ?? 'Unknown'),
+        song_count:   p.playlist_songs?.[0]?.count ?? 0,
+      };
+    })
+    .sort((a, b) => b.song_count - a.song_count);
 
   res.json(playlists);
 });
@@ -85,11 +131,11 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/playlists/:id/songs  — list songs in a playlist
+// PATCH /api/playlists/:id  — update name and/or is_public (owner only)
+// Body: { name?: string, is_public?: boolean }
 // ---------------------------------------------------------------------------
 
-router.get('/:id/songs', requireAuth, async (req, res) => {
-  // Verify playlist belongs to user
+router.patch('/:id', requireAuth, async (req, res) => {
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -98,6 +144,67 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
 
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  const updates = {};
+  if (req.body.name !== undefined)      updates.name      = req.body.name.trim();
+  if (req.body.is_public !== undefined) updates.is_public = req.body.is_public;
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from('playlists')
+    .update(updates)
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: 'Failed to update playlist' });
+  res.json(data);
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/playlists/:id  — delete a playlist (owner only)
+//                              playlist_songs are removed via ON DELETE CASCADE
+// ---------------------------------------------------------------------------
+
+router.delete('/:id', requireAuth, async (req, res) => {
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
+    .from('playlists')
+    .select('id, user_id')
+    .eq('id', req.params.id)
+    .single();
+
+  if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
+  if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  const { error } = await getSupabaseAdmin()
+    .from('playlists')
+    .delete()
+    .eq('id', req.params.id);
+
+  if (error) return res.status(500).json({ error: 'Failed to delete playlist' });
+  res.status(204).send();
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/playlists/:id/songs  — list songs in a playlist
+//                                 non-owners may view if playlist is public
+// ---------------------------------------------------------------------------
+
+router.get('/:id/songs', optionalAuth, async (req, res) => {
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
+    .from('playlists')
+    .select('id, user_id, is_public')
+    .eq('id', req.params.id)
+    .single();
+
+  if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
+
+  const isOwner  = req.user && playlist.user_id === req.user.id;
+  const canView  = isOwner || playlist.is_public;
+  if (!canView) return res.status(403).json({ error: 'Forbidden' });
 
   const { data, error } = await getSupabaseAdmin()
     .from('playlist_songs')
@@ -111,7 +218,7 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/playlists/:id/songs  — add a song to a playlist
+// POST /api/playlists/:id/songs  — add a song to a playlist (owner only)
 // Body: { song_id: string }
 // ---------------------------------------------------------------------------
 
@@ -122,7 +229,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing song_id' });
   }
 
-  // Verify playlist belongs to user
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -132,7 +238,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  // Verify song belongs to user
   const { data: song, error: songErr } = await getSupabaseAdmin()
     .from('songs')
     .select('id, user_id')
@@ -142,7 +247,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (songErr || !song) return res.status(404).json({ error: 'Song not found' });
   if (song.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  // Get current max position
   const { data: posData } = await getSupabaseAdmin()
     .from('playlist_songs')
     .select('position')
@@ -171,11 +275,59 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/playlists/:id/songs/:songId  — remove a song from a playlist
+// POST /api/playlists/:id/copy  — copy all songs from :id into another playlist
+// Body: { target_playlist_id: string }
+// Source must be owned or public; target must be owned by the caller.
+// Songs already present in the target are skipped (no duplicates).
+// ---------------------------------------------------------------------------
+
+router.post('/:id/copy', requireAuth, async (req, res) => {
+  const { target_playlist_id } = req.body;
+  if (!target_playlist_id) return res.status(400).json({ error: 'Missing target_playlist_id' });
+
+  // Verify source is accessible
+  const { data: source, error: srcErr } = await getSupabaseAdmin()
+    .from('playlists').select('id, user_id, is_public').eq('id', req.params.id).single();
+  if (srcErr || !source) return res.status(404).json({ error: 'Source playlist not found' });
+  if (source.user_id !== req.user.id && !source.is_public) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  // Verify target is owned by caller
+  const { data: target, error: tgtErr } = await getSupabaseAdmin()
+    .from('playlists').select('id, user_id').eq('id', target_playlist_id).single();
+  if (tgtErr || !target) return res.status(404).json({ error: 'Target playlist not found' });
+  if (target.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  // Fetch source songs
+  const { data: sourceSongs } = await getSupabaseAdmin()
+    .from('playlist_songs').select('song_id').eq('playlist_id', req.params.id);
+  if (!sourceSongs || sourceSongs.length === 0) return res.json({ copied: 0 });
+
+  // Fetch existing songs in target to detect duplicates and find max position
+  const { data: targetSongs } = await getSupabaseAdmin()
+    .from('playlist_songs').select('song_id, position').eq('playlist_id', target_playlist_id);
+
+  const existingIds  = new Set((targetSongs || []).map(s => s.song_id));
+  const maxPosition  = (targetSongs || []).reduce((m, s) => Math.max(m, s.position ?? 0), -1);
+
+  const toInsert = sourceSongs
+    .filter(s => !existingIds.has(s.song_id))
+    .map((s, i) => ({ playlist_id: target_playlist_id, song_id: s.song_id, position: maxPosition + 1 + i }));
+
+  if (toInsert.length === 0) return res.json({ copied: 0 });
+
+  const { error: insErr } = await getSupabaseAdmin().from('playlist_songs').insert(toInsert);
+  if (insErr) return res.status(500).json({ error: 'Failed to copy songs' });
+
+  res.json({ copied: toInsert.length });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/playlists/:id/songs/:songId  — remove a song (owner only)
 // ---------------------------------------------------------------------------
 
 router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
-  // Verify playlist belongs to user
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -195,10 +347,5 @@ router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
 
   res.status(204).send();
 });
-
-// ---------------------------------------------------------------------------
-// PATCH /api/songs/:id/transpose  — update transpose value for a saved song
-// Body: { transpose: number }
-// ---------------------------------------------------------------------------
 
 module.exports = router;

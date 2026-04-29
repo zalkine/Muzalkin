@@ -27,7 +27,13 @@ export default function SettingsPage() {
         .eq('id', user.id)
         .single();
       if (data) {
-        if (data.language)   setLanguage(data.language as Language);
+        if (data.language) {
+          setLanguage(data.language as Language);
+          // Sync app direction with DB preference (handles new devices / cleared localStorage)
+          if (data.language !== i18n.language) {
+            changeAppLanguage(data.language as Language);
+          }
+        }
         if (data.instrument) setInstrument(data.instrument as Instrument);
       }
     })();
