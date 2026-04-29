@@ -128,5 +128,14 @@
   "tuner_mic_denied":      "Microphone access was denied. Please allow mic access in your browser settings.",
   "tuner_permission_denied": "Microphone access denied. Please allow microphone permission in your browser settings.",
   "tuner_mic_error":       "Could not access microphone. Please check your device settings.",
-  "tagline": "Enjoy playing with MuZalkin"
+  "tagline": "Enjoy playing with MuZalkin",
+  "public_playlists": "Public Playlists",
+  "public_badge": "Public",
+  "private_badge": "Private",
+  "make_public": "Make Public",
+  "make_private": "Make Private",
+  "rename_playlist": "Rename",
+  "delete_playlist": "Delete Playlist",
+  "delete_playlist_confirm": "Delete \"{{name}}\"? This cannot be undone.",
+  "by_creator": "by {{name}}"
 }

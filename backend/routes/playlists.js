@@ -1,10 +1,5 @@
 'use strict';
 
-/**
- * /api/playlists — playlist management and song-to-playlist association.
- * All routes require a valid Supabase JWT in Authorization: Bearer <token>.
- */
-
 const { Router }       = require('express');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -29,26 +24,30 @@ async function requireAuth(req, res, next) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/playlists  — list user's playlists with song count
+// GET /api/playlists  — list user's own + all public playlists, sorted by
+//                      song count descending (most popular first)
 // ---------------------------------------------------------------------------
 
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await getSupabaseAdmin()
     .from('playlists')
-    .select('id, name, description, is_public, created_at, playlist_songs(count)')
-    .eq('user_id', req.user.id)
-    .order('created_at', { ascending: false });
+    .select('id, name, description, is_public, created_at, user_id, users(display_name), playlist_songs(count)')
+    .or(`user_id.eq.${req.user.id},is_public.eq.true`);
 
   if (error) return res.status(500).json({ error: 'Failed to fetch playlists' });
 
-  const playlists = (data || []).map((p) => ({
-    id:          p.id,
-    name:        p.name,
-    description: p.description,
-    is_public:   p.is_public,
-    created_at:  p.created_at,
-    song_count:  p.playlist_songs?.[0]?.count ?? 0,
-  }));
+  const playlists = (data || [])
+    .map((p) => ({
+      id:           p.id,
+      name:         p.name,
+      description:  p.description,
+      is_public:    p.is_public,
+      created_at:   p.created_at,
+      is_owner:     p.user_id === req.user.id,
+      creator_name: p.users?.display_name ?? 'Unknown',
+      song_count:   p.playlist_songs?.[0]?.count ?? 0,
+    }))
+    .sort((a, b) => b.song_count - a.song_count);
 
   res.json(playlists);
 });
@@ -85,11 +84,11 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/playlists/:id/songs  — list songs in a playlist
+// PATCH /api/playlists/:id  — update name and/or is_public (owner only)
+// Body: { name?: string, is_public?: boolean }
 // ---------------------------------------------------------------------------
 
-router.get('/:id/songs', requireAuth, async (req, res) => {
-  // Verify playlist belongs to user
+router.patch('/:id', requireAuth, async (req, res) => {
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -98,6 +97,67 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
 
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  const updates = {};
+  if (req.body.name !== undefined)      updates.name      = req.body.name.trim();
+  if (req.body.is_public !== undefined) updates.is_public = req.body.is_public;
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from('playlists')
+    .update(updates)
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: 'Failed to update playlist' });
+  res.json(data);
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/playlists/:id  — delete a playlist (owner only)
+//                              playlist_songs are removed via ON DELETE CASCADE
+// ---------------------------------------------------------------------------
+
+router.delete('/:id', requireAuth, async (req, res) => {
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
+    .from('playlists')
+    .select('id, user_id')
+    .eq('id', req.params.id)
+    .single();
+
+  if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
+  if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+
+  const { error } = await getSupabaseAdmin()
+    .from('playlists')
+    .delete()
+    .eq('id', req.params.id);
+
+  if (error) return res.status(500).json({ error: 'Failed to delete playlist' });
+  res.status(204).send();
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/playlists/:id/songs  — list songs in a playlist
+//                                 non-owners may view if playlist is public
+// ---------------------------------------------------------------------------
+
+router.get('/:id/songs', requireAuth, async (req, res) => {
+  const { data: playlist, error: plErr } = await getSupabaseAdmin()
+    .from('playlists')
+    .select('id, user_id, is_public')
+    .eq('id', req.params.id)
+    .single();
+
+  if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
+
+  const isOwner  = playlist.user_id === req.user.id;
+  const canView  = isOwner || playlist.is_public;
+  if (!canView) return res.status(403).json({ error: 'Forbidden' });
 
   const { data, error } = await getSupabaseAdmin()
     .from('playlist_songs')
@@ -111,7 +171,7 @@ router.get('/:id/songs', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/playlists/:id/songs  — add a song to a playlist
+// POST /api/playlists/:id/songs  — add a song to a playlist (owner only)
 // Body: { song_id: string }
 // ---------------------------------------------------------------------------
 
@@ -122,7 +182,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing song_id' });
   }
 
-  // Verify playlist belongs to user
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -132,7 +191,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (plErr || !playlist) return res.status(404).json({ error: 'Playlist not found' });
   if (playlist.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  // Verify song belongs to user
   const { data: song, error: songErr } = await getSupabaseAdmin()
     .from('songs')
     .select('id, user_id')
@@ -142,7 +200,6 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
   if (songErr || !song) return res.status(404).json({ error: 'Song not found' });
   if (song.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
-  // Get current max position
   const { data: posData } = await getSupabaseAdmin()
     .from('playlist_songs')
     .select('position')
@@ -171,11 +228,10 @@ router.post('/:id/songs', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/playlists/:id/songs/:songId  — remove a song from a playlist
+// DELETE /api/playlists/:id/songs/:songId  — remove a song (owner only)
 // ---------------------------------------------------------------------------
 
 router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
-  // Verify playlist belongs to user
   const { data: playlist, error: plErr } = await getSupabaseAdmin()
     .from('playlists')
     .select('id, user_id')
@@ -195,10 +251,5 @@ router.delete('/:id/songs/:songId', requireAuth, async (req, res) => {
 
   res.status(204).send();
 });
-
-// ---------------------------------------------------------------------------
-// PATCH /api/songs/:id/transpose  — update transpose value for a saved song
-// Body: { transpose: number }
-// ---------------------------------------------------------------------------
 
 module.exports = router;

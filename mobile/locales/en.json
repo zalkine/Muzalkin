@@ -53,5 +53,14 @@
   "saving": "Saving…",
   "font_size_increase": "A+",
   "font_size_decrease": "A−",
-  "tagline": "Enjoy playing with MuZalkin"
+  "tagline": "Enjoy playing with MuZalkin",
+  "public_playlists": "Public Playlists",
+  "public_badge": "Public",
+  "private_badge": "Private",
+  "make_public": "Make Public",
+  "make_private": "Make Private",
+  "rename_playlist": "Rename",
+  "delete_playlist": "Delete Playlist",
+  "delete_playlist_confirm": "Delete \"{{name}}\"? This cannot be undone.",
+  "by_creator": "by {{name}}"
 }

@@ -16,7 +16,7 @@ type PlaylistSong = {
   };
 };
 
-type Playlist = { id: string; name: string; description: string | null };
+type Playlist = { id: string; name: string; description: string | null; user_id: string };
 type Status = 'loading' | 'done' | 'error';
 
 export default function PlaylistDetailPage() {
@@ -30,6 +30,8 @@ export default function PlaylistDetailPage() {
   const [songs,    setSongs]    = useState<PlaylistSong[]>([]);
   const [status,   setStatus]   = useState<Status>('loading');
 
+  const isOwner = playlist?.user_id === session?.user.id;
+
   const load = useCallback(async () => {
     if (!id || !session) return;
     setStatus('loading');
@@ -37,7 +39,7 @@ export default function PlaylistDetailPage() {
     const [plRes, songsRes] = await Promise.all([
       supabase
         .from('playlists')
-        .select('id, name, description')
+        .select('id, name, description, user_id')
         .eq('id', id)
         .single(),
       supabase
@@ -152,22 +154,24 @@ export default function PlaylistDetailPage() {
                   <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
                 </button>
 
-                {/* Remove button */}
-                <button
-                  onClick={() => handleRemove(ps.id)}
-                  title={t('remove')}
-                  style={{
-                    padding: '14px 14px',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text3)',
-                    fontSize: 18,
-                    cursor: 'pointer',
-                    lineHeight: 1,
-                  }}
-                >
-                  ✕
-                </button>
+                {/* Remove button — owner only */}
+                {isOwner && (
+                  <button
+                    onClick={() => handleRemove(ps.id)}
+                    title={t('remove')}
+                    style={{
+                      padding: '14px 14px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text3)',
+                      fontSize: 18,
+                      cursor: 'pointer',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
               </li>
             ))}
           </ul>

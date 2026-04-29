@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
 import { useSession } from '../lib/SessionContext';
 
+const BACKEND_URL = '';
+
 type Playlist = {
   id: string;
   name: string;
@@ -11,6 +13,8 @@ type Playlist = {
   is_public: boolean;
   created_at: string;
   song_count: number;
+  creator_name: string;
+  is_owner: boolean;
 };
 
 type Status = 'loading' | 'done' | 'error';
@@ -36,36 +40,34 @@ export default function PlaylistsPage() {
     );
   }
 
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [status,    setStatus]    = useState<Status>('loading');
-  const [showModal, setShowModal] = useState(false);
-  const [newName,   setNewName]   = useState('');
-  const [creating,  setCreating]  = useState(false);
+  const [playlists,  setPlaylists]  = useState<Playlist[]>([]);
+  const [status,     setStatus]     = useState<Status>('loading');
+  const [showModal,  setShowModal]  = useState(false);
+  const [newName,    setNewName]    = useState('');
+  const [creating,   setCreating]   = useState(false);
+  const [editingId,  setEditingId]  = useState<string | null>(null);
+  const [editName,   setEditName]   = useState('');
+
+  const getToken = async () => {
+    const { data: { session: s } } = await supabase.auth.getSession();
+    return s?.access_token ?? '';
+  };
 
   const loadPlaylists = useCallback(async () => {
     setStatus('loading');
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setStatus('error'); return; }
+    const token = await getToken();
+    if (!token) { setStatus('error'); return; }
 
-    const { data, error } = await supabase
-      .from('playlists')
-      .select('id, name, description, is_public, created_at, playlist_songs(count)')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) { setStatus('error'); return; }
-
-    const mapped: Playlist[] = (data ?? []).map((p: any) => ({
-      id:          p.id,
-      name:        p.name,
-      description: p.description,
-      is_public:   p.is_public,
-      created_at:  p.created_at,
-      song_count:  p.playlist_songs?.[0]?.count ?? 0,
-    }));
-
-    setPlaylists(mapped);
-    setStatus('done');
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/playlists`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setStatus('error'); return; }
+      setPlaylists(await res.json());
+      setStatus('done');
+    } catch {
+      setStatus('error');
+    }
   }, []);
 
   useEffect(() => { loadPlaylists(); }, [loadPlaylists]);
@@ -73,22 +75,187 @@ export default function PlaylistsPage() {
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     setCreating(true);
+    const token = await getToken();
+    if (!token) { setCreating(false); return; }
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setCreating(false); return; }
-
-    const { error } = await supabase.from('playlists').insert({
-      user_id:   user.id,
-      name:      newName.trim(),
-      is_public: false,
+    const res = await fetch(`${BACKEND_URL}/api/playlists`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim() }),
     });
 
     setCreating(false);
     setShowModal(false);
     setNewName('');
-
-    if (error) { alert(t('save_error')); } else { loadPlaylists(); }
+    if (!res.ok) { alert(t('save_error')); } else { loadPlaylists(); }
   }, [newName, loadPlaylists, t]);
+
+  const handleRename = useCallback(async (id: string, name: string) => {
+    setEditingId(null);
+    if (!name.trim()) return;
+    const token = await getToken();
+    if (!token) return;
+
+    const res = await fetch(`${BACKEND_URL}/api/playlists/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (res.ok) {
+      setPlaylists(prev => prev.map(p => p.id === id ? { ...p, name: name.trim() } : p));
+    }
+  }, []);
+
+  const handleTogglePublic = useCallback(async (id: string, current: boolean) => {
+    const token = await getToken();
+    if (!token) return;
+
+    const res = await fetch(`${BACKEND_URL}/api/playlists/${id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_public: !current }),
+    });
+    if (res.ok) {
+      setPlaylists(prev => prev.map(p => p.id === id ? { ...p, is_public: !current } : p));
+    }
+  }, []);
+
+  const handleDelete = useCallback(async (id: string, name: string) => {
+    if (!window.confirm(t('delete_playlist_confirm', { name }))) return;
+    const token = await getToken();
+    if (!token) return;
+
+    const res = await fetch(`${BACKEND_URL}/api/playlists/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      setPlaylists(prev => prev.filter(p => p.id !== id));
+    }
+  }, [t]);
+
+  const startEdit = (id: string, name: string) => {
+    setEditingId(id);
+    setEditName(name);
+  };
+
+  const myPlaylists     = playlists.filter(p => p.is_owner);
+  const publicPlaylists = playlists.filter(p => !p.is_owner);
+
+  const renderRow = (pl: Playlist, idx: number, arr: Playlist[]) => (
+    <li
+      key={pl.id}
+      style={{
+        display: 'flex',
+        flexDirection: isRTL ? 'row-reverse' : 'row',
+        alignItems: 'center',
+        padding: '12px 16px',
+        borderBottom: idx < arr.length - 1 ? '1px solid var(--border2)' : 'none',
+        gap: 10,
+      }}
+    >
+      {/* Info area — navigates to detail except when editing */}
+      <div
+        style={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
+        onClick={() => editingId !== pl.id && navigate(`/playlist/${pl.id}`)}
+      >
+        {/* Name + badge row */}
+        <div style={{
+          display: 'flex',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          alignItems: 'center',
+          gap: 6,
+          marginBottom: 2,
+        }}>
+          {editingId === pl.id ? (
+            <input
+              autoFocus
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleRename(pl.id, editName);
+                if (e.key === 'Escape') setEditingId(null);
+              }}
+              onBlur={() => handleRename(pl.id, editName)}
+              onClick={e => e.stopPropagation()}
+              dir={isRTL ? 'rtl' : 'ltr'}
+              style={{
+                fontSize: 15, fontWeight: 600, color: 'var(--text)',
+                border: '1px solid var(--accent)', borderRadius: 6,
+                padding: '2px 8px', background: 'var(--input-bg)',
+                outline: 'none', flex: 1, maxWidth: 220,
+              }}
+            />
+          ) : (
+            <span style={{
+              fontSize: 15, fontWeight: 600, color: 'var(--text)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {pl.name}
+            </span>
+          )}
+          <span style={{
+            fontSize: 10, fontWeight: 700, paddingInline: 5, paddingBlock: 2,
+            borderRadius: 4, flexShrink: 0,
+            backgroundColor: pl.is_public ? 'rgba(66,133,244,0.12)' : 'rgba(150,150,150,0.12)',
+            color: pl.is_public ? 'var(--accent)' : 'var(--text3)',
+            textTransform: 'uppercase', letterSpacing: 0.3,
+          }}>
+            {pl.is_public ? t('public_badge') : t('private_badge')}
+          </span>
+        </div>
+        {/* Subtitle row */}
+        <div style={{
+          display: 'flex',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          gap: 4, alignItems: 'center',
+        }}>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {t('by_creator', { name: pl.creator_name })}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>·</span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>
+            {t(pl.song_count === 1 ? 'songs_count_one' : 'songs_count_other', { count: pl.song_count })}
+          </span>
+        </div>
+      </div>
+
+      {/* Owner controls */}
+      {pl.is_owner ? (
+        <div style={{
+          display: 'flex',
+          flexDirection: isRTL ? 'row-reverse' : 'row',
+          gap: 4, flexShrink: 0,
+        }}>
+          <button
+            title={pl.is_public ? t('make_private') : t('make_public')}
+            onClick={e => { e.stopPropagation(); handleTogglePublic(pl.id, pl.is_public); }}
+            style={ctrlBtnStyle}
+          >
+            {pl.is_public ? '🔒' : '🌐'}
+          </button>
+          <button
+            title={t('rename_playlist')}
+            onClick={e => { e.stopPropagation(); startEdit(pl.id, pl.name); }}
+            style={ctrlBtnStyle}
+          >
+            ✏
+          </button>
+          <button
+            title={t('delete_playlist')}
+            onClick={e => { e.stopPropagation(); handleDelete(pl.id, pl.name); }}
+            style={{ ...ctrlBtnStyle, color: '#e53e3e' }}
+          >
+            🗑
+          </button>
+        </div>
+      ) : (
+        <span style={{ fontSize: 18, color: 'var(--text3)', flexShrink: 0 }}>
+          {isRTL ? '‹' : '›'}
+        </span>
+      )}
+    </li>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
@@ -104,7 +271,7 @@ export default function PlaylistsPage() {
         backgroundColor: 'var(--bg)',
       }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
-          {t('my_playlists')}
+          {t('playlists')}
         </h2>
         <button
           onClick={() => setShowModal(true)}
@@ -121,11 +288,8 @@ export default function PlaylistsPage() {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
-
         {status === 'loading' && (
-          <div style={centerStyle}>
-            <div style={spinnerStyle} />
-          </div>
+          <div style={centerStyle}><div style={spinnerStyle} /></div>
         )}
 
         {status === 'error' && (
@@ -135,55 +299,40 @@ export default function PlaylistsPage() {
           </div>
         )}
 
-        {status === 'done' && playlists.length === 0 && (
-          <div style={centerStyle}>
-            <p style={{ color: 'var(--text3)', textAlign: 'center' }}>{t('no_playlists')}</p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                paddingInline: 20, paddingBlock: 10,
-                backgroundColor: 'var(--accent)', color: '#fff',
-                border: 'none', borderRadius: 8, fontSize: 15,
-                fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              {t('create_playlist')}
-            </button>
-          </div>
-        )}
+        {status === 'done' && (
+          <>
+            {/* My Playlists section */}
+            <div style={{ padding: '10px 16px 4px' }}>
+              <span style={sectionLabelStyle}>{t('my_playlists')}</span>
+            </div>
 
-        {status === 'done' && playlists.length > 0 && (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {playlists.map((pl, idx) => (
-              <li key={pl.id}>
+            {myPlaylists.length === 0 ? (
+              <div style={{ padding: '8px 16px 12px' }}>
                 <button
-                  onClick={() => navigate(`/playlist/${pl.id}`)}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    flexDirection: isRTL ? 'row-reverse' : 'row',
-                    alignItems: 'center',
-                    padding: '14px 16px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: idx < playlists.length - 1 ? '1px solid var(--border2)' : 'none',
-                    cursor: 'pointer',
-                    textAlign: isRTL ? 'right' : 'left',
-                  }}
+                  onClick={() => setShowModal(true)}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0 }}
                 >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{pl.name}</div>
-                    <div style={{ fontSize: 13, color: 'var(--text3)' }}>
-                      {t(pl.song_count === 1 ? 'songs_count_one' : 'songs_count_other', {
-                        count: pl.song_count,
-                      })}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 18, color: 'var(--text3)' }}>{isRTL ? '‹' : '›'}</span>
+                  + {t('create_playlist')}
                 </button>
-              </li>
-            ))}
-          </ul>
+              </div>
+            ) : (
+              <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 8px' }}>
+                {myPlaylists.map((pl, idx) => renderRow(pl, idx, myPlaylists))}
+              </ul>
+            )}
+
+            {/* Public Playlists section */}
+            {publicPlaylists.length > 0 && (
+              <>
+                <div style={{ padding: '10px 16px 4px', borderTop: '1px solid var(--border)' }}>
+                  <span style={sectionLabelStyle}>{t('public_playlists')}</span>
+                </div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {publicPlaylists.map((pl, idx) => renderRow(pl, idx, publicPlaylists))}
+                </ul>
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -191,13 +340,15 @@ export default function PlaylistsPage() {
       {showModal && (
         <div style={overlayStyle}>
           <div style={{ ...modalStyle, backgroundColor: 'var(--card-bg)' }}>
-            <h3 style={{ margin: 0, textAlign: isRTL ? 'right' : 'left', color: 'var(--text)' }}>{t('new_playlist')}</h3>
+            <h3 style={{ margin: 0, textAlign: isRTL ? 'right' : 'left', color: 'var(--text)' }}>
+              {t('new_playlist')}
+            </h3>
             <input
               type="text"
               placeholder={t('playlist_name')}
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
               autoFocus
               dir={isRTL ? 'rtl' : 'ltr'}
               style={{
@@ -269,4 +420,20 @@ const modalStyle: React.CSSProperties = {
   width: '100%', maxWidth: 400,
   borderRadius: 12, padding: 20, display: 'flex',
   flexDirection: 'column', gap: 16,
+};
+
+const ctrlBtnStyle: React.CSSProperties = {
+  background: 'none',
+  border: '1px solid var(--border)',
+  borderRadius: 6,
+  padding: '3px 7px',
+  fontSize: 14,
+  cursor: 'pointer',
+  color: 'var(--text3)',
+  lineHeight: 1.4,
+};
+
+const sectionLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: 'var(--text3)',
+  textTransform: 'uppercase', letterSpacing: 0.8,
 };
