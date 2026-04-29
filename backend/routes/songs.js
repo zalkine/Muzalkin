@@ -28,6 +28,14 @@ async function requireAuth(req, res, next) {
   next();
 }
 
+async function optionalAuth(req, res, next) {
+  const token = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  if (!token) { req.user = null; return next(); }
+  const { data: { user } } = await getSupabaseAnon().auth.getUser(token);
+  req.user = user ?? null;
+  next();
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/songs  — save a song from cached_chords to the user's library
 // Body: { cached_chord_id: string, instrument?: 'guitar'|'piano' }
@@ -87,6 +95,52 @@ router.get('/', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: 'Failed to fetch songs' });
 
   res.json(data || []);
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/songs/:id  — fetch a single song
+//   Allowed if: caller is the owner, OR song appears in at least one public playlist.
+// ---------------------------------------------------------------------------
+
+router.get('/:id', optionalAuth, async (req, res) => {
+  const { data: song, error: songErr } = await getSupabaseAdmin()
+    .from('songs')
+    .select('id, title, artist, language, chords_data, source_url, user_id')
+    .eq('id', req.params.id)
+    .single();
+
+  if (songErr || !song) return res.status(404).json({ error: 'Song not found' });
+
+  const isOwner = req.user && song.user_id === req.user.id;
+
+  if (!isOwner) {
+    // Check if the song lives in at least one public playlist
+    const { data: ps } = await getSupabaseAdmin()
+      .from('playlist_songs')
+      .select('playlist_id')
+      .eq('song_id', req.params.id);
+
+    if (!ps || ps.length === 0) return res.status(403).json({ error: 'Forbidden' });
+
+    const playlistIds = ps.map(r => r.playlist_id);
+    const { data: publicPl } = await getSupabaseAdmin()
+      .from('playlists')
+      .select('id')
+      .in('id', playlistIds)
+      .eq('is_public', true)
+      .limit(1);
+
+    if (!publicPl || publicPl.length === 0) return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  res.json({
+    id:          song.id,
+    song_title:  song.title,
+    artist:      song.artist,
+    language:    song.language,
+    chords_data: song.chords_data,
+    raw_url:     song.source_url ?? null,
+  });
 });
 
 // ---------------------------------------------------------------------------

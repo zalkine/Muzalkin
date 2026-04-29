@@ -21,7 +21,7 @@ type Status = 'loading' | 'done' | 'error';
 
 export default function PlaylistsPage() {
   const { t, i18n } = useTranslation();
-  const isRTL   = i18n.language === 'he';
+  const isRTL   = i18n.language === 'he' || document.documentElement.dir === 'rtl';
   const session = useSession();
   const navigate = useNavigate();
 
