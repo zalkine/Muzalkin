@@ -335,10 +335,11 @@ def _parse_ug_content(content: str) -> list:
 # Cifraclub chord page parser
 # ---------------------------------------------------------------------------
 
-# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, C7M, GM, etc.
+# Chord word pattern: Am, G#, Fmaj7, Dsus4, A7(4), D4, Cadd9, C/E, C7M, GM,
+# Am7b5 (half-diminished), etc.
 _CHORD_WORD_RE = re.compile(
     r'^[A-G][#b]?'
-    r'(?:m(?:aj\d*)?|M(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|\d+M?)*'
+    r'(?:m(?:aj\d*)?|M(?:aj\d*)?|min|sus[24]?|dim|aug|add\d+|b5|#5|\d+M?)*'
     r'(?:\([^)]*\))?'        # optional (4), (9), etc.
     r'(?:/[A-G][#b]?)?$'
 )
@@ -346,11 +347,27 @@ _CHORD_WORD_RE = re.compile(
 # Guitar tab line: starts with a string name (E B G D A e) followed by |
 _TAB_LINE_RE = re.compile(r'^[EBGDAe]\s*\|')
 
+# Tokens that are allowed on a chord line but are not chord names:
+# separators (/ | -) and repeat markers (2x, x2, (2x), (x2))
+_NON_CHORD_TOKEN_RE = re.compile(
+    r'^[/|\\,;-]$'
+    r'|^\(?\d+[xX]\)?$'
+    r'|^\(?[xX]\d+\)?$',
+    re.I,
+)
+
 
 def _is_chord_line(line: str) -> bool:
-    """Return True if every space-separated token on the line is a chord name."""
+    """
+    Return True if the line is a chord line.
+    Ignores repeat markers (2x, x2) and separator symbols (/ |) so that lines
+    like 'Em7  D  Cadd9  G  (2x)' or 'Am / G / Em' are not misclassified as lyrics.
+    """
     words = line.split()
-    return bool(words) and all(_CHORD_WORD_RE.match(w) for w in words)
+    if not words:
+        return False
+    chord_words = [w for w in words if not _NON_CHORD_TOKEN_RE.match(w)]
+    return bool(chord_words) and all(_CHORD_WORD_RE.match(w) for w in chord_words)
 
 
 # Map common Spanish/Portuguese section names to English
