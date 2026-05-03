@@ -153,6 +153,7 @@ def fetch_tab4u(url: str) -> dict:
         return {}
 
     chords_data = []
+    _debug_rows_printed = 0
 
     for row in tpl.find_all("tr"):
 
@@ -197,6 +198,17 @@ def fetch_tab4u(url: str) -> dict:
             text = song_cells[0].get_text(separator=" ").replace("\xa0", " ").strip()
             if text:
                 chords_data.append({"type": "lyrics", "content": text})
+            continue
+
+        # ── Unrecognised row — log first 5 to help diagnose missing chords ─
+        if _debug_rows_printed < 5:
+            tds = row.find_all("td")
+            if tds:
+                classes = ['/'.join(td.get('class', ['?'])) for td in tds]
+                sample  = row.decode_contents()[:300].replace('\n', ' ')
+                print(f"[fetch_tab4u] UNKNOWN ROW td-classes={classes} html={sample!r}",
+                      file=sys.stderr)
+                _debug_rows_printed += 1
 
     print(f"[fetch_tab4u] parsed {len(chords_data)} lines, title='{title}', artist='{artist}'",
           file=sys.stderr)
