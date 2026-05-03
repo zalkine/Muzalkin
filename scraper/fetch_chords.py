@@ -181,6 +181,11 @@ def fetch_tab4u(url: str) -> dict:
             content = "".join(pieces)
             if content.strip():
                 chords_data.append({"type": "chords", "content": content})
+            else:
+                # Chord cells found but content empty — log raw HTML to diagnose
+                for cell in chord_cells[:2]:
+                    print(f"[fetch_tab4u] EMPTY CHORD CELL html={cell.decode_contents()[:400]!r}",
+                          file=sys.stderr)
             continue
 
         # ── Section header ─────────────────────────────────────────────────
