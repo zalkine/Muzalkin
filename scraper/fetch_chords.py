@@ -152,6 +152,9 @@ def fetch_tab4u(url: str) -> dict:
         print("[fetch_tab4u] #songContentTPL not found", file=sys.stderr)
         return {}
 
+    # Temporary: dump first 3000 chars of container to diagnose verse structure
+    print(f"[fetch_tab4u] TPL HTML={tpl.decode_contents()[:3000]!r}", file=sys.stderr)
+
     chords_data = []
     _debug_rows_printed = 0
 
