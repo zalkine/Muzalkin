@@ -109,7 +109,7 @@ def fetch_tab4u(url: str) -> dict:
     title = ""
     h1 = soup.find("h1")
     if h1:
-        title = h1.get_text(strip=True)
+        title = h1.get_text(separator=" ").strip()
         # Handle "אקורדים לשיר TITLE שלARTIST" prefix pattern (Tab4U Hebrew pages)
         m = re.match(r"^אקורדים לשיר\s+(.+?)\s+של.+$", title)
         if m:
@@ -117,6 +117,8 @@ def fetch_tab4u(url: str) -> dict:
         else:
             # Strip site-appended suffixes like "שיר לשלום - אקורדים | Tab4U"
             title = re.sub(r"\s*[-–|]\s*אקורדים.*$", "", title, flags=re.I).strip()
+            # English Tab4U: "Something Just Like This chords by Coldplay..."
+            title = re.sub(r"\s+chords\b.*$",          "", title, flags=re.I).strip()
             title = re.sub(r"\s*[-–|]\s*chords.*$",   "", title, flags=re.I).strip()
             title = re.sub(r"\s*\|.*$",                "", title).strip()
 
@@ -128,12 +130,12 @@ def fetch_tab4u(url: str) -> dict:
         "h2.moreSongH2"
     )
     if artist_tag:
-        artist = artist_tag.get_text(strip=True)
+        artist = artist_tag.get_text(separator=" ").strip()
     else:
         # Fallback: first <h2> sometimes holds the artist name
         h2 = soup.find("h2")
         if h2:
-            candidate = h2.get_text(strip=True)
+            candidate = h2.get_text(separator=" ").strip()
             # Ignore h2s that look like section headers (e.g. "פזמון")
             if candidate and not re.match(
                 r"^(פזמון|בית|גשר|קודה|אינטרו|chorus|verse|bridge|intro)", candidate, re.I
@@ -159,10 +161,12 @@ def fetch_tab4u(url: str) -> dict:
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # Strip only ASCII whitespace (\r\n\t\x20), NOT \xa0.
-                # \xa0 (non-breaking space) is used by Tab4U to position each
-                # chord above its matching syllable — must be preserved.
-                text = cell.get_text(separator="").strip("\r\n\t ")
+                # Use \xa0 as separator so adjacent chord spans (English pages
+                # wrap each chord name in its own <span>) are separated by a
+                # non-breaking space rather than merged ("Em7D" → "Em7\xa0D").
+                # For Hebrew pages the chord row is a single text node, so the
+                # separator is never inserted and existing \xa0 alignment is kept.
+                text = cell.get_text(separator="\xa0").strip("\r\n\t ")
                 if text.strip():           # only append non-blank cells
                     parts.append(text)
             # Join cells, ensuring at least one \xa0 between adjacent chords
