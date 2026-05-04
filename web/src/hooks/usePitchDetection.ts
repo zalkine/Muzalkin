@@ -19,8 +19,15 @@ export interface PitchResult {
   frequency: number;
 }
 
-const CLARITY_THRESHOLD = 0.9;
-const STABILITY_FRAMES  = 3;
+// Classical (nylon) guitar strings produce weak fundamentals relative to
+// harmonics. fftSize=4096 doubles frequency resolution vs 2048, giving the
+// McLeod Pitch Method enough cycles to lock on the true fundamental rather
+// than flipping to the octave harmonic. CLARITY_THRESHOLD lowered slightly
+// to handle nylon's softer attack without dropping out between frames.
+// STABILITY_FRAMES raised to 5 so a single octave-error frame doesn't
+// snap the needle — the note must be consistent for ~80ms before showing.
+const CLARITY_THRESHOLD = 0.85;
+const STABILITY_FRAMES  = 5;
 // EMA smoothing factor for cents — lower = smoother needle, higher = faster response
 const CENTS_ALPHA       = 0.15;
 // Only push a new result to React state at most every N ms (matches CSS transition)
@@ -103,7 +110,7 @@ export function usePitchDetection() {
       ctxRef.current = ctx;
 
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 4096;
       analyserRef.current = analyser;
 
       const detector = PitchDetector.forFloat32Array(analyser.fftSize);
