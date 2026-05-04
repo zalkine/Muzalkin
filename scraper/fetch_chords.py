@@ -152,30 +152,25 @@ def fetch_tab4u(url: str) -> dict:
         print("[fetch_tab4u] #songContentTPL not found", file=sys.stderr)
         return {}
 
-    # Temporary: dump first 3000 chars of container to diagnose verse structure
-    print(f"[fetch_tab4u] TPL HTML={tpl.decode_contents()[:3000]!r}", file=sys.stderr)
-
     chords_data = []
-    _debug_rows_printed = 0
 
     for row in tpl.find_all("tr"):
 
         # ── Chord cells ────────────────────────────────────────────────────
-        chord_cells = row.find_all("td", class_="chords")
+        # Hebrew pages use class="chords"; English pages use class="chords_en".
+        # Both formats place \xa0 text nodes between chord spans for alignment,
+        # so separator="" preserves the positioning exactly as Tab4U intends.
+        chord_cells = row.find_all("td", class_=re.compile(r"^chords"))
         if chord_cells:
             parts = []
             for cell in chord_cells:
-                # Use \xa0 as separator so adjacent chord spans (English pages
-                # wrap each chord name in its own <span>) are separated by a
-                # non-breaking space rather than merged ("Em7D" → "Em7\xa0D").
-                # For Hebrew pages the chord row is a single text node, so the
-                # separator is never inserted and existing \xa0 alignment is kept.
-                text = cell.get_text(separator="\xa0").strip("\r\n\t ")
-                if text.strip():           # only append non-blank cells
+                # Strip only ASCII whitespace, NOT \xa0 — \xa0 carries chord
+                # position information and must be preserved intact.
+                text = cell.get_text(separator="").strip("\r\n\t ")
+                if text.strip():
                     parts.append(text)
-            # Join cells, ensuring at least one \xa0 between adjacent chords
-            # when the preceding cell has no trailing non-breaking space.
-            # Without this, cells like "C" + "Am" → "CAm" instead of "C\xa0Am".
+            # Ensure at least one \xa0 between adjacent cells that lack trailing
+            # non-breaking space, so "C" + "Am" → "C\xa0Am" not "CAm".
             pieces = []
             for idx, text in enumerate(parts):
                 if idx > 0 and not parts[idx - 1].endswith('\xa0'):
@@ -184,11 +179,6 @@ def fetch_tab4u(url: str) -> dict:
             content = "".join(pieces)
             if content.strip():
                 chords_data.append({"type": "chords", "content": content})
-            else:
-                # Chord cells found but content empty — log raw HTML to diagnose
-                for cell in chord_cells[:2]:
-                    print(f"[fetch_tab4u] EMPTY CHORD CELL html={cell.decode_contents()[:400]!r}",
-                          file=sys.stderr)
             continue
 
         # ── Section header ─────────────────────────────────────────────────
@@ -202,21 +192,10 @@ def fetch_tab4u(url: str) -> dict:
         # ── Lyric cells ────────────────────────────────────────────────────
         song_cells = row.find_all("td", class_="song")
         if song_cells:
-            # Lyrics use regular spaces — \xa0 → ' ' is intentional here
+            # \xa0 → ' ': lyrics use non-breaking spaces between words on Tab4U
             text = song_cells[0].get_text(separator=" ").replace("\xa0", " ").strip()
             if text:
                 chords_data.append({"type": "lyrics", "content": text})
-            continue
-
-        # ── Unrecognised row — log first 5 to help diagnose missing chords ─
-        if _debug_rows_printed < 5:
-            tds = row.find_all("td")
-            if tds:
-                classes = ['/'.join(td.get('class', ['?'])) for td in tds]
-                sample  = row.decode_contents()[:300].replace('\n', ' ')
-                print(f"[fetch_tab4u] UNKNOWN ROW td-classes={classes} html={sample!r}",
-                      file=sys.stderr)
-                _debug_rows_printed += 1
 
     print(f"[fetch_tab4u] parsed {len(chords_data)} lines, title='{title}', artist='{artist}'",
           file=sys.stderr)
