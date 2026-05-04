@@ -141,6 +141,11 @@ function runPythonScraper(scriptName, args) {
     return null;
   }
 
+  // Always forward Python stderr so debug prints are visible in Cloud Run logs
+  if (result.stderr && result.stderr.trim()) {
+    console.log(`[${scriptName} stderr]`, result.stderr.trim());
+  }
+
   try {
     return JSON.parse(result.stdout);
   } catch {
